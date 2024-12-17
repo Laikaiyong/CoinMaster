@@ -1,0 +1,1 @@
+https://github.com/bnb-chain/javascript-sdk/blob/master/docs/README.md
