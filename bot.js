@@ -1,19 +1,32 @@
 const TelegramBot = require("node-telegram-bot-api");
 require("dotenv").config();
+const { createClient } = require('@supabase/supabase-js');
 
 class CryptoTradingBot {
   constructor() {
     this.bot = new TelegramBot(process.env.TG_API_KEY, { polling: true });
     this.cloudflareEndpoint = "https://tradingbot.vandycklai.workers.dev/";
+    this.supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
     this.setupHandlers();
   }
 
   setupHandlers() {
     // Welcome message with inline keyboard
-    this.bot.onText(/\/start/, (msg) => {
-      const welcomeMessage = `Welcome to BSC Trading & Memecoin Assistant! 🚀
+    this.bot.onText(/\/start/, async (msg) => {
+      // Check if user has wallet
+      const { data: wallet } = await this.supabase
+        .from('wallets')
+        .select('*')
+        .eq('user_id', msg.from.id)
+        .single();
 
-I can help you with:
+      let welcomeMessage = `Welcome to BSC Trading & Memecoin Assistant! 🚀\n\n`;
+
+      if (!wallet) {
+        welcomeMessage += `❗ Please set up your trading wallet first using /setup_wallet\n\n`;
+      }
+
+      welcomeMessage += `I can help you with:
 📊 Trading Analysis & Strategies
 🪙 Memecoin Creation & Deployment
 📈 Token Contract Development
@@ -25,6 +38,7 @@ Try these commands:
 • /liquidity - Learn about liquidity pool setup
 • /chart [token] - Get technical analysis
 • /risk - Important risk management tips
+• /trade [token] - Execute trades (requires wallet setup)
 
 Type /help for more features!`;
 
@@ -37,6 +51,10 @@ Type /help for more features!`;
           [
             { text: "🪙 Memecoin Guide", callback_data: "menu_memecoin" },
             { text: "⚠️ Risk Management", callback_data: "menu_risk" }
+          ],
+          [
+            { text: "💰 Setup Wallet", callback_data: "setup_wallet" },
+            { text: "🔄 Trade Now", callback_data: "trade_now" }
           ]
         ]
       };
@@ -46,9 +64,60 @@ Type /help for more features!`;
       });
     });
 
+    // Handle wallet setup
+    this.bot.onText(/\/setup_wallet/, async (msg) => {
+      await this.setupWalletFlow(msg.chat.id, msg.from.id);
+    });
+
+    // Handle trading command
+    this.bot.onText(/\/trade (.+)/, async (msg, match) => {
+      const symbol = match[1].toUpperCase();
+      
+      // Check if user has wallet setup
+      const { data: wallet } = await this.supabase
+        .from('wallets')
+        .select('*')
+        .eq('user_id', msg.from.id)
+        .single();
+
+      if (!wallet) {
+        await this.bot.sendMessage(msg.chat.id, 
+          "❌ Please set up your trading wallet first using /setup_wallet");
+        return;
+      }
+
+      const tradeKeyboard = {
+        inline_keyboard: [
+          [
+            { text: "🟢 Buy", callback_data: `trade_buy_${symbol}` },
+            { text: "🔴 Sell", callback_data: `trade_sell_${symbol}` }
+          ],
+          [
+            { text: "💰 Check Balance", callback_data: "trade_balance" },
+            { text: "📊 Order History", callback_data: "trade_history" }
+          ]
+        ]
+      };
+
+      await this.bot.sendMessage(msg.chat.id, 
+        `Trading Interface for ${symbol}\nWallet: ${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}`, {
+        reply_markup: tradeKeyboard
+      });
+    });
+
     // Handle callback queries from inline keyboard
     this.bot.on('callback_query', async (query) => {
       const chatId = query.message.chat.id;
+      
+      if (query.data.startsWith('trade_')) {
+        await this.handleTradeCallbacks(query);
+        return;
+      }
+
+      if (query.data === 'setup_wallet') {
+        await this.setupWalletFlow(chatId, query.from.id);
+        return;
+      }
       
       switch(query.data) {
         case 'menu_price':
@@ -67,240 +136,57 @@ Type /help for more features!`;
       
       await this.bot.answerCallbackQuery(query.id);
     });
+  }
 
-    this.bot.onText(/\/help/, (msg) => {
-      const helpMessage = `🤖 *Available Commands:*
+  async setupWalletFlow(chatId, userId) {
+    const msg = `🔐 *Wallet Setup*\n\n` +
+      `To enable trading functionality, you need to:\n\n` +
+      `1. Create a new BSC wallet or import existing one\n` +
+      `2. Securely store your private key\n` +
+      `3. Add funds to start trading\n\n` +
+      `Choose an option:`;
 
-*Trading Commands:*
-/price [symbol] - Get price analysis
-/chart [symbol] - Technical analysis
-/trend [symbol] - Market trend analysis
-/volume [symbol] - Trading volume insights
-/alert [symbol] [price] - Set price alert
-/portfolio - Track your portfolio
-/convert [amount] [from] [to] - Currency converter
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "Create New Wallet", callback_data: "wallet_create" },
+          { text: "Import Existing", callback_data: "wallet_import" }
+        ]
+      ]
+    };
 
-*Memecoin Development:*
-/deploy - Token deployment guide
-/contract - Contract creation steps
-/liquidity - LP setup guide
-/marketing - Marketing strategies
-/audit - Security check guide
-/tokenomics - Tokenomics calculator
-/whitepaper - Whitepaper template
-
-*Risk Management:*
-/risk - Risk management tips
-/security - Security best practices
-/scam - Scam prevention guide
-/calculator - Position size calculator
-/leverage - Leverage risk calculator
-
-*Market Research:*
-/wallet [address] - BSC wallet analysis
-/gas - Current BSC gas fees
-/new - Latest BSC tokens
-/trending - Trending memecoins
-/sentiment - Market sentiment analysis
-/news - Latest crypto news
-/events - Upcoming crypto events
-
-*Social Features:*
-/community - Join our community
-/feedback - Submit feedback
-/donate - Support development
-/report [issue] - Report issues
-
-_Always DYOR and trade responsibly!_ 💡`;
-
-      this.bot.sendMessage(msg.chat.id, helpMessage, {
-        parse_mode: "Markdown",
-      });
+    await this.bot.sendMessage(chatId, msg, {
+      parse_mode: "Markdown",
+      reply_markup: keyboard
     });
+  }
 
-    // Price command handler with custom keyboard
-    this.bot.onText(/\/price (.+)/, async (msg, match) => {
-      const symbol = match[1].toUpperCase();
+  async handleTradeCallbacks(query) {
+    const chatId = query.message.chat.id;
+    const [action, type, symbol] = query.data.split('_');
+
+    if (type === 'buy' || type === 'sell') {
       const keyboard = {
-        keyboard: [
-          ['1H Chart', '4H Chart', '1D Chart'],
-          ['Buy/Sell Signals', 'Volume Analysis'],
-          ['Back to Main Menu']
-        ],
-        resize_keyboard: true,
-        one_time_keyboard: true
+        inline_keyboard: [
+          [
+            { text: "25%", callback_data: `amount_${type}_25_${symbol}` },
+            { text: "50%", callback_data: `amount_${type}_50_${symbol}` },
+            { text: "75%", callback_data: `amount_${type}_75_${symbol}` },
+            { text: "100%", callback_data: `amount_${type}_100_${symbol}` }
+          ],
+          [
+            { text: "Custom Amount", callback_data: `amount_${type}_custom_${symbol}` }
+          ]
+        ]
       };
-      
-      await this.bot.sendMessage(msg.chat.id, `Analyzing ${symbol}...`, {
+
+      await this.bot.sendMessage(chatId, 
+        `Select amount to ${type} ${symbol}:`, {
         reply_markup: keyboard
       });
-      
-      await this.getTradeAnalysis(
-        msg.chat.id,
-        `Analyze current price action for ${symbol}`
-      );
-    });
-
-    // Portfolio tracking
-    this.bot.onText(/\/portfolio/, async (msg) => {
-      const portfolioKeyboard = {
-        inline_keyboard: [
-          [
-            { text: "Add Asset", callback_data: "portfolio_add" },
-            { text: "Remove Asset", callback_data: "portfolio_remove" }
-          ],
-          [
-            { text: "View Portfolio", callback_data: "portfolio_view" },
-            { text: "Performance", callback_data: "portfolio_performance" }
-          ]
-        ]
-      };
-      
-      await this.bot.sendMessage(msg.chat.id, "Portfolio Management:", {
-        reply_markup: portfolioKeyboard
-      });
-    });
-
-    // Price alerts
-    this.bot.onText(/\/alert (.+) (.+)/, async (msg, match) => {
-      const symbol = match[1].toUpperCase();
-      const targetPrice = match[2];
-      await this.bot.sendMessage(
-        msg.chat.id,
-        `⚡ Alert set for ${symbol} at ${targetPrice} USDT`
-      );
-    });
-
-    // Chart analysis handler with timeframe options
-    this.bot.onText(/\/chart (.+)/, async (msg, match) => {
-      const symbol = match[1].toUpperCase();
-      const timeframes = {
-        inline_keyboard: [
-          [
-            { text: "15m", callback_data: `chart_15m_${symbol}` },
-            { text: "1h", callback_data: `chart_1h_${symbol}` },
-            { text: "4h", callback_data: `chart_4h_${symbol}` }
-          ],
-          [
-            { text: "1d", callback_data: `chart_1d_${symbol}` },
-            { text: "1w", callback_data: `chart_1w_${symbol}` }
-          ]
-        ]
-      };
-      
-      await this.bot.sendMessage(msg.chat.id, "Select Timeframe:", {
-        reply_markup: timeframes
-      });
-      
-      await this.getTradeAnalysis(
-        msg.chat.id,
-        `Provide detailed technical analysis for ${symbol} including support/resistance levels`
-      );
-    });
-
-    // Other existing handlers...
-    this.bot.onText(/\/deploy/, async (msg) => {
-      await this.getTradeAnalysis(
-        msg.chat.id,
-        "Provide step-by-step guide for deploying a new memecoin on BSC"
-      );
-    });
-
-    this.bot.onText(/\/liquidity/, async (msg) => {
-      await this.getTradeAnalysis(
-        msg.chat.id,
-        "Explain how to properly set up and manage liquidity pools on BSC"
-      );
-    });
-
-    this.bot.onText(/\/risk/, async (msg) => {
-      await this.getTradeAnalysis(
-        msg.chat.id,
-        "Provide comprehensive risk management strategies for BSC trading"
-      );
-    });
-
-    this.bot.on("message", async (msg) => {
-      if (msg.text?.startsWith("/")) return;
-
-      try {
-        await this.getTradeAnalysis(msg.chat.id, msg.text);
-      } catch (error) {
-        console.error("Error processing message:", error);
-        await this.bot.sendMessage(
-          msg.chat.id,
-          "❌ Sorry, I encountered an error. Please try again or use /help for available commands.",
-          { reply_to_message_id: msg.message_id }
-        );
-      }
-    });
-  }
-
-  async sendPriceMenu(chatId) {
-    const menu = {
-      inline_keyboard: [
-        [
-          { text: "BTC Price", callback_data: "price_btc" },
-          { text: "ETH Price", callback_data: "price_eth" }
-        ],
-        [
-          { text: "Custom Token", callback_data: "price_custom" },
-          { text: "Price Alerts", callback_data: "price_alerts" }
-        ]
-      ]
-    };
-    
-    await this.bot.sendMessage(chatId, "Price Analysis Menu:", {
-      reply_markup: menu
-    });
-  }
-
-  async sendToolsMenu(chatId) {
-    const menu = {
-      inline_keyboard: [
-        [
-          { text: "Position Calculator", callback_data: "tool_position" },
-          { text: "Profit Calculator", callback_data: "tool_profit" }
-        ],
-        [
-          { text: "Trading Journal", callback_data: "tool_journal" },
-          { text: "Market Scanner", callback_data: "tool_scanner" }
-        ]
-      ]
-    };
-    
-    await this.bot.sendMessage(chatId, "Trading Tools Menu:", {
-      reply_markup: menu
-    });
-  }
-
-  async getTradeAnalysis(chatId, prompt) {
-    try {
-      const response = await fetch(this.cloudflareEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ prompt }),
-      });
-
-      if (!response.ok) {
-        throw new Error("API request failed");
-      }
-
-      const data = await response.json();
-
-      // Format and send the response
-      const formattedResponse = `🤖 *Analysis Results:*\n\n${data.response}`;
-
-      await this.bot.sendMessage(chatId, formattedResponse, {
-        parse_mode: "Markdown",
-        disable_web_page_preview: true,
-      });
-    } catch (error) {
-      console.error("Error getting analysis:", error);
-      throw error;
     }
+
+    await this.bot.answerCallbackQuery(query.id);
   }
 }
 
