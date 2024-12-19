@@ -237,6 +237,70 @@ Type /help for more features!`;
 
     await this.bot.answerCallbackQuery(query.id);
   }
+
+  async sendPriceMenu(chatId) {
+    const priceInfo = "Here are the latest prices for popular cryptocurrencies:\n" +
+                      "• BTC: $XX,XXX\n" +
+                      "• ETH: $X,XXX\n" +
+                      "• BNB: $XXX\n" +
+                      "For more detailed analysis, type /trade [token].";
+
+    await this.bot.sendMessage(chatId, priceInfo);
+  }
+
+  async sendToolsMenu(chatId) {
+    const toolsInfo = "Here are some trading tools you can use:\n" +
+                      "• Price Alerts: Set alerts for price changes.\n" +
+                      "• Portfolio Tracker: Keep track of your investments.\n" +
+                      "• Market Analysis: Get insights on market trends.\n" +
+                      "For more information, type /help.";
+
+    await this.bot.sendMessage(chatId, toolsInfo);
+  }
+
+  async sendMemecoinMenu(chatId) {
+    const memecoinInfo = "Interested in creating your own memecoin? Here’s how:\n" +
+                         "1. Define your concept and purpose.\n" +
+                         "2. Choose a blockchain (e.g., BSC).\n" +
+                         "3. Use our deployment guide to create your token.\n" +
+                         "For more assistance, type /deploy.";
+
+    await this.bot.sendMessage(chatId, memecoinInfo);
+  }
+
+  async sendRiskMenu(chatId) {
+    const riskInfo = "Risk management is crucial in trading. Here are some tips:\n" +
+                     "• Never invest more than you can afford to lose.\n" +
+                     "• Diversify your portfolio to mitigate risks.\n" +
+                     "• Set stop-loss orders to limit potential losses.\n" +
+                     "For more detailed strategies, type /risk.";
+
+    await this.bot.sendMessage(chatId, riskInfo);
+  }
+
+  async getPrediction(userMessage) {
+    const response = await fetch(this.cloudflareEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ prompt: userMessage }),
+    });
+    const data = await response.json();
+    return data; // Assuming the response contains the prediction
+  }
+
+  async handleRiskManagement(userMessage) {
+    const response = await fetch(this.cloudflareEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ prompt: userMessage }),
+    });
+    const data = await response.json();
+    return data; // Assuming the response contains the risk management advice
+  }
 }
 
 try {
