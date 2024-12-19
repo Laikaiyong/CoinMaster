@@ -75,6 +75,7 @@ Try these commands:
 • /liquidity - Learn about liquidity pool setup
 • /chart [token] - Get technical analysis
 • /risk - Important risk management tips
+• /predict [message] - Get market predictions based on your input
 • /trade [token] - Execute trades
 
 Type /help for more features!`;
@@ -191,6 +192,24 @@ Type /help for more features!`;
       }
 
       await this.bot.answerCallbackQuery(query.id);
+    });
+
+    // Handle prediction command
+    this.bot.onText(/\/predict (.+)/, async (msg, match) => {
+      const userMessage = match[1];
+      const prediction = await this.getPrediction("Predict the market for crypto: " +userMessage);
+      const responseMessage = prediction.response.response; // Extracting the response from the LLM response
+
+      await this.bot.sendMessage(msg.chat.id, `Prediction: ${responseMessage}`);
+    });
+
+    // Handle risk management command
+    this.bot.onText(/\/risk/, async (msg, match) => {
+      const userMessage = match[1];
+      const riskAdvice = await this.handleRiskManagement("Provide some risk management tips on cryptocurrency trading");
+      const responseMessage = riskAdvice.response.response; // Extracting the response from the LLM response
+
+      await this.bot.sendMessage(msg.chat.id, `Risk Management Advice: ${responseMessage}`);
     });
   }
 
