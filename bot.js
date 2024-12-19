@@ -3,7 +3,7 @@ const { createClient } = require("@supabase/supabase-js");
 const { Web3, HttpProvider } = require("web3");
 require("dotenv").config();
 
-class CryptoTradingBot {
+export class CryptoTradingBot {
   constructor() {
     var web3Provider = new HttpProvider("https://data-seed-prebsc-1-s1.binance.org:8545");
     this.web3 = new Web3(web3Provider);
@@ -237,12 +237,4 @@ Type /help for more features!`;
 
     await this.bot.answerCallbackQuery(query.id);
   }
-}
-
-try {
-  console.log("Starting BSC Trading & Memecoin Assistant...");
-  const bot = new CryptoTradingBot();
-  console.log("Bot is running...");
-} catch (error) {
-  console.error("Error starting bot:", error);
 }
