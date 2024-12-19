@@ -1,4 +1,4 @@
-import { CryptoTradingBot } from "../../bot.js";
+import { CryptoTradingBot } from "../../newBot.js";
 import messageParts from "../../messageParts.js";
 
 
