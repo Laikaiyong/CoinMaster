@@ -1,3 +1,7 @@
+const express = require('express')
+const app = express()
+const port = 3000
+
 const TelegramBot = require("node-telegram-bot-api");
 const { createClient } = require("@supabase/supabase-js");
 const { Web3, HttpProvider } = require("web3");
@@ -322,11 +326,13 @@ Type /help for more features!`;
   }
 }
 
-try {
-  const bot = new CryptoTradingBot();
-  console.log("Bot is running...");
-  
-} catch (error) {
-  console.error("Error handling message:", error);
-}
-
+app.listen(port, () => {
+  console.log(`TG Bot listening on port ${port}`)
+  try {
+    const bot = new CryptoTradingBot();
+    console.log("Bot is running...");
+    
+  } catch (error) {
+    console.error("Error handling message:", error);
+  }
+})
