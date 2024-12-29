@@ -88,7 +88,7 @@ class CryptoTradingBot {
       let balanceMessage = `CBTC: ${balanceInEth}\n`;
 
       let welcomeMessage = `Welcome to Citrea Trading & Memecoin Assistant! 🚀\n\n`;
-      welcomeMessage += "Your Citrea Wallet: ```" + wallet.address + "```";
+      welcomeMessage += `Your Citrea Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>\n\n`;
       welcomeMessage += `Balances:\n${balanceMessage}\n`;
       welcomeMessage += `I can help you with:
 📊 Trading Analysis & Strategies
@@ -125,7 +125,8 @@ Type /help for more features!`;
       };
 
       this.bot.sendMessage(msg.chat.id, welcomeMessage, {
-        reply_markup: keyboard,
+        parse_mode: 'HTML',
+        reply_markup: keyboard
       });
     });
 
@@ -172,8 +173,8 @@ Balance: ${balanceInEth} CBTC
     });
 
     this.bot.on("callback_query", this.handleCallbackQuery.bind(this));
-    this.setupPredictionHandler();
-    this.setupRiskHandler();
+    // this.setupPredictionHandler();
+    // this.setupRiskHandler();
   }
 
   async analyzeTradingOpportunity(symbol, userId) {
