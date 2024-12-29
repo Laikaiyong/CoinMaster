@@ -9,42 +9,70 @@ require("dotenv").config();
 
 class CryptoTradingBot {
   constructor() {
-    var web3Provider = new HttpProvider("https://data-seed-prebsc-1-s1.binance.org:8545");
-    this.web3 = new Web3(web3Provider);
-    this.bot = new TelegramBot(process.env.TG_API_KEY, { polling: true });
-    this.cloudflareEndpoint = "https://tradingbot.vandycklai.workers.dev/";
-    this.supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_KEY
-    );
+    this.setupCore();
+    this.setupMemory();
+    this.setupPerception();
     this.setupHandlers();
   }
 
+  setupCore() {
+    var web3Provider = new HttpProvider("https://rpc.testnet.citrea.xyz");
+    this.web3 = new Web3(web3Provider);
+    this.bot = new TelegramBot(process.env.TG_API_KEY, { polling: true });
+    this.cloudflareEndpoint = "https://tradingbot.vandycklai.workers.dev/";
+    this.supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+    
+    this.marketEndpoints = {
+      price: "https://api.coingecko.com/api/v3/simple/price",
+      trends: "https://api.coingecko.com/api/v3/trending",
+      fear_greed: "https://api.alternative.me/fng/"
+    };
+  }
+
+  setupMemory() {
+    this.memory = {
+      userPreferences: new Map(),
+      marketPatterns: new Map(),
+      tradingHistory: new Map()
+    };
+  }
+
+  setupPerception() {
+    this.indicators = {
+      async getFearGreedIndex() {
+        const response = await fetch(this.marketEndpoints.fear_greed);
+        return await response.json();
+      },
+
+      async getMarketTrends() {
+        const response = await fetch(this.marketEndpoints.trends);
+        return await response.json();
+      },
+
+      async getTechnicalAnalysis(symbol) {
+        const analysis = await this.fetchTechnicalIndicators(symbol);
+        return this.analyzeTechnicalData(analysis);
+      }
+    };
+  }
+
   setupHandlers() {
-    // Welcome message with inline keyboard
     this.bot.onText(/\/start/, async (msg) => {
-      // Check if user has wallet
       let { data: wallet } = await this.supabase
         .from("wallets")
         .select("*")
         .eq("user_id", msg.from.id)
         .single();
 
-      // Create wallet if doesn't exist
       if (!wallet) {
         const account = this.web3.eth.accounts.create();
-        console.log(msg.from.id);
-        console.log(account);
-        const walletAddress = account.address;
         const { data, error } = await this.supabase
           .from("wallets")
-          .insert([
-            {
-              user_id: msg.from.id,
-              address: walletAddress,
-              private_key: account.privateKey,
-            },
-          ])
+          .insert([{
+            user_id: msg.from.id,
+            address: account.address,
+            private_key: account.privateKey,
+          }])
           .select()
           .single();
 
@@ -55,18 +83,13 @@ class CryptoTradingBot {
         wallet = data;
       }
 
-      // Get account balance
       const balance = await this.web3.eth.getBalance(wallet.address);
       const balanceInEth = this.web3.utils.fromWei(balance, 'ether');
-      let balanceMessage = `BNB: ${balanceInEth}\n`;
+      let balanceMessage = `CBTC: ${balanceInEth}\n`;
 
-      let welcomeMessage = `Welcome to BSC Trading & Memecoin Assistant! 🚀\n\n`;
-      welcomeMessage += `Your BSC Wallet: ${wallet.address.slice(
-        0,
-        6
-      )}...${wallet.address.slice(-4)}\n`;
+      let welcomeMessage = `Welcome to Citrea Trading & Memecoin Assistant! 🚀\n\n`;
+      welcomeMessage += `Your Citrea Wallet: ${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}\n`;
       welcomeMessage += `Balances:\n${balanceMessage}\n`;
-
       welcomeMessage += `I can help you with:
 📊 Trading Analysis & Strategies
 🪙 Memecoin Creation & Deployment
@@ -79,7 +102,7 @@ Try these commands:
 • /liquidity - Learn about liquidity pool setup
 • /chart [token] - Get technical analysis
 • /risk - Important risk management tips
-• /predict [message] - Get market predictions based on your input
+• /predict [message] - Get market predictions
 • /trade [token] - Execute trades
 
 Type /help for more features!`;
@@ -106,21 +129,29 @@ Type /help for more features!`;
       });
     });
 
-    // Handle trading command
     this.bot.onText(/\/trade (.+)/, async (msg, match) => {
       const symbol = match[1].toUpperCase();
+      const analysis = await this.analyzeTradingOpportunity(symbol, msg.from.id);
 
-      // Get user's wallet
       const { data: wallet } = await this.supabase
         .from("wallets")
         .select("*")
         .eq("user_id", msg.from.id)
         .single();
 
-      // Get account balance
       const balance = await this.web3.eth.getBalance(wallet.address);
       const balanceInEth = this.web3.utils.fromWei(balance, 'ether');
-      let balanceMessage = `BNB: ${balanceInEth}\n`;
+      
+      const tradeMessage = `
+Trading Analysis for ${symbol}:
+• Recommendation: ${analysis.recommendation}
+• Confidence: ${(analysis.confidence * 100).toFixed(1)}%
+• Risk Level: ${analysis.risk}
+• Reasoning: ${analysis.reasoning}
+
+Your Wallet: ${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}
+Balance: ${balanceInEth} CBTC
+`;
 
       const tradeKeyboard = {
         inline_keyboard: [
@@ -129,92 +160,90 @@ Type /help for more features!`;
             { text: "🔴 Sell", callback_data: `trade_sell_${symbol}` },
           ],
           [
-            {
-              text: "💰 Check Balances",
-              callback_data: "trade_balance",
-            },
+            { text: "💰 Check Balances", callback_data: "trade_balance" },
             { text: "📊 Order History", callback_data: "trade_history" },
           ],
         ],
       };
 
-      await this.bot.sendMessage(
-        msg.chat.id,
-        `Trading Interface for ${symbol}\nWallet: ${wallet.address.slice(
-          0,
-          6
-        )}...${wallet.address.slice(-4)}\nChain: BSC\n\nBalances:\n${balanceMessage}`,
-        {
-          reply_markup: tradeKeyboard,
-        }
-      );
+      await this.bot.sendMessage(msg.chat.id, tradeMessage, {
+        reply_markup: tradeKeyboard,
+      });
     });
 
-    // Handle callback queries from inline keyboard
-    this.bot.on("callback_query", async (query) => {
-      const chatId = query.message.chat.id;
+    this.bot.on("callback_query", this.handleCallbackQuery.bind(this));
+    this.setupPredictionHandler();
+    this.setupRiskHandler();
+  }
 
-      if (query.data.startsWith("trade_")) {
-        await this.handleTradeCallbacks(query);
-        return;
-      }
+  async analyzeTradingOpportunity(symbol, userId) {
+    const [fearGreed, trends, technical] = await Promise.all([
+      this.indicators.getFearGreedIndex(),
+      this.indicators.getMarketTrends(),
+      this.indicators.getTechnicalAnalysis(symbol)
+    ]);
 
-      if (query.data === "check_balance") {
-        const { data: wallet } = await this.supabase
-          .from("wallets")
-          .select("*")
-          .eq("user_id", query.from.id)
-          .single();
-
-        const balance = await this.web3.eth.getBalance(wallet.address);
-        const balanceInEth = this.web3.utils.fromWei(balance, 'ether');
-        let balanceMessage = `BNB: ${balanceInEth}\n`;
-
-        await this.bot.sendMessage(
-          chatId,
-          `💰 Wallet Balance\n\nAddress: ${wallet.address.slice(
-            0,
-            6
-          )}...${wallet.address.slice(-4)}\n\nBalances:\n${balanceMessage}\nChain: BSC`
-        );
-        return;
-      }
-
-      switch (query.data) {
-        case "menu_price":
-          await this.sendPriceMenu(chatId);
-          break;
-        case "menu_tools":
-          await this.sendToolsMenu(chatId);
-          break;
-        case "menu_memecoin":
-          await this.sendMemecoinMenu(chatId);
-          break;
-        case "menu_risk":
-          await this.sendRiskMenu(chatId);
-          break;
-      }
-
-      await this.bot.answerCallbackQuery(query.id);
+    const userPrefs = this.memory.userPreferences.get(userId) || { riskTolerance: 'moderate' };
+    
+    const decision = this.makeTradeDecision({
+      fearGreed,
+      trends,
+      technical,
+      userPrefs,
+      symbol
     });
 
-    // Handle prediction command
-    this.bot.onText(/\/predict (.+)/, async (msg, match) => {
-      const userMessage = match[1];
-      const prediction = await this.getPrediction("Predict the market for crypto: " +userMessage);
-      const responseMessage = prediction.response.response; // Extracting the response from the LLM response
+    return {
+      recommendation: decision.action,
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      risk: decision.risk
+    };
+  }
 
-      await this.bot.sendMessage(msg.chat.id, `Prediction: ${responseMessage}`);
-    });
+  makeTradeDecision(data) {
+    const signals = {
+      technical: this.analyzeTechnicalSignals(data.technical),
+      sentiment: this.analyzeSentiment(data.fearGreed),
+      trend: this.analyzeTrendStrength(data.trends, data.symbol)
+    };
 
-    // Handle risk management command
-    this.bot.onText(/\/risk/, async (msg, match) => {
-      const userMessage = match[1];
-      const riskAdvice = await this.handleRiskManagement("Provide some risk management tips on cryptocurrency trading");
-      const responseMessage = riskAdvice.response.response; // Extracting the response from the LLM response
+    const weightedScore = this.calculateWeightedScore(signals, data.userPrefs);
 
-      await this.bot.sendMessage(msg.chat.id, `Risk Management Advice: ${responseMessage}`);
-    });
+    return {
+      action: weightedScore > 0.7 ? 'BUY' : weightedScore < 0.3 ? 'SELL' : 'HOLD',
+      confidence: weightedScore,
+      reasoning: this.generateReasoning(signals),
+      risk: this.calculateRiskLevel(signals)
+    };
+  }
+
+  async handleCallbackQuery(query) {
+    const chatId = query.message.chat.id;
+
+    if (query.data.startsWith("trade_")) {
+      await this.handleTradeCallbacks(query);
+      return;
+    }
+
+    if (query.data === "check_balance") {
+      await this.handleBalanceCheck(query);
+      return;
+    }
+
+    const menuHandlers = {
+      menu_price: this.sendPriceMenu,
+      menu_tools: this.sendToolsMenu,
+      menu_memecoin: this.sendMemecoinMenu,
+      menu_risk: this.sendRiskMenu
+    };
+
+    const handler = menuHandlers[query.data];
+    if (handler) {
+      await handler.call(this, chatId);
+    }
+
+    await this.bot.answerCallbackQuery(query.id);
   }
 
   async handleTradeCallbacks(query) {
@@ -230,7 +259,7 @@ Type /help for more features!`;
 
       const balance = await this.web3.eth.getBalance(wallet.address);
       const balanceInEth = this.web3.utils.fromWei(balance, 'ether');
-      let balanceMessage = `BNB: ${balanceInEth}\n`;
+      let balanceMessage = `CBTC: ${balanceInEth}\n`;
 
       const keyboard = {
         inline_keyboard: [
@@ -264,7 +293,7 @@ Type /help for more features!`;
   async sendPriceMenu(chatId) {
     const priceInfo = "Here are the latest prices for popular cryptocurrencies:\n" +
                       "• BTC: $XX,XXX\n" +
-                      "• ETH: $X,XXX\n" +
+                      "• CBTC: $X,XXX\n" +
                       "• BNB: $XXX\n" +
                       "For more detailed analysis, type /trade [token].";
 
@@ -282,9 +311,9 @@ Type /help for more features!`;
   }
 
   async sendMemecoinMenu(chatId) {
-    const memecoinInfo = "Interested in creating your own memecoin? Here’s how:\n" +
+    const memecoinInfo = "Interested in creating your own memecoin? Here's how:\n" +
                          "1. Define your concept and purpose.\n" +
-                         "2. Choose a blockchain (e.g., BSC).\n" +
+                         "2. Choose a blockchain (e.g., Citrea).\n" +
                          "3. Use our deployment guide to create your token.\n" +
                          "For more assistance, type /deploy.";
 
@@ -310,7 +339,7 @@ Type /help for more features!`;
       body: JSON.stringify({ prompt: userMessage }),
     });
     const data = await response.json();
-    return data; // Assuming the response contains the prediction
+    return data;
   }
 
   async handleRiskManagement(userMessage) {
@@ -322,16 +351,15 @@ Type /help for more features!`;
       body: JSON.stringify({ prompt: userMessage }),
     });
     const data = await response.json();
-    return data; // Assuming the response contains the risk management advice
+    return data;
   }
 }
 
 app.listen(port, () => {
-  console.log(`TG Bot listening on port ${port}`)
+  console.log(`Enhanced Trading Bot listening on port ${port}`);
   try {
     const bot = new CryptoTradingBot();
-    console.log("Bot is running...");
-    
+    console.log("Bot is running with autonomous features...");
   } catch (error) {
     console.error("Error handling message:", error);
   }
