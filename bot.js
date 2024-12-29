@@ -88,7 +88,7 @@ class CryptoTradingBot {
       let balanceMessage = `CBTC: ${balanceInEth}\n`;
 
       let welcomeMessage = `Welcome to Citrea Trading & Memecoin Assistant! 🚀\n\n`;
-      welcomeMessage += `Your Citrea Wallet: ${wallet.address.slice(0,6)}...${wallet.address.slice(-4)}\n`;
+      welcomeMessage += "Your Citrea Wallet: ```" + wallet.address + "```";
       welcomeMessage += `Balances:\n${balanceMessage}\n`;
       welcomeMessage += `I can help you with:
 📊 Trading Analysis & Strategies

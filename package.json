@@ -5,6 +5,7 @@
   "main": "bot.js",
   "type": "commonjs",
   "dependencies": {
+    "@goat-sdk/core": "^0.4.3",
     "@supabase/supabase-js": "^2.47.8",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
