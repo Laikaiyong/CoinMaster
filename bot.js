@@ -170,6 +170,7 @@ class CryptoTradingBot {
         privateKey: wallet.private_key,
         walletAddress: wallet.address,
       });
+      this.exchange.setSandboxMode(true); 
 
       // const balance = await this.web3.eth.getBalance(wallet.address);
       // const balanceInEth = this.web3.utils.fromWei(balance, "ether");
@@ -256,6 +257,39 @@ Type /help for more features!`;
     });
 
     this.bot.onText(/\/order (.+) (.+) (.+)/, async (msg, match) => {
+      let { data: wallet } = await this.supabase
+      .from("wallets")
+      .select("*")
+      .eq("user_id", msg.from.id)
+      .single();
+
+    if (!wallet) {
+      const account = this.web3.eth.accounts.create();
+      const { data, error } = await this.supabase
+        .from("wallets")
+        .insert([
+          {
+            user_id: msg.from.id,
+            address: account.address,
+            private_key: account.privateKey,
+          },
+        ])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error creating wallet:", error);
+        return;
+      }
+      wallet = data;
+    }
+
+    this.exchange = new ccxt.hyperliquid({
+      privateKey: wallet.private_key,
+      walletAddress: wallet.address,
+    });
+    this.exchange.setSandboxMode(true); 
+
       const [_, symbol, side, amount] = match;
       const response = await this.createOrder(
         symbol.toUpperCase(),
