@@ -104,3 +104,41 @@ Implements multiple risk control mechanisms:
 - Position sizing recommendations
 - Trade quality assessment
 - Experience-based risk adjustments
+## Demonstration of Reasoning Steps
+1. Market Analysis
+    - Price trend evaluation
+    - Volume pattern analysis
+    - Technical indicator signals
+    - Sentiment score calculation
+
+2. Risk Assessment
+    - Volatility measurement
+    - Market depth analysis
+    - Liquidity evaluation
+    - Position size calculation
+
+3. Trade Decision
+    - Entry/exit point determination
+    - Risk-reward ratio calculation
+    - Quality score assignment
+    - Final recommendation generation
+
+## Impact Across User Types
+
+### First-Time Crypto Users
+- Simplified interface
+- Educational content
+- Risk-averse recommendations
+- Basic market explanations
+
+### Intermediate Traders
+- Detailed technical analysis
+- Customizable strategies
+- Advanced market metrics
+- Risk management tools
+
+### High-Volume Traders
+- Complex trading patterns
+- Market depth analysis
+- Multiple pair correlations
+- Custom API integration

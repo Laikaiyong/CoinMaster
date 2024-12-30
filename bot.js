@@ -222,8 +222,6 @@ Balance: ${balanceInEth} CBTC
     });
 
     this.bot.on("callback_query", this.handleCallbackQuery.bind(this));
-    this.setupPredictionHandler();
-    this.setupRiskHandler();
     this.setupPriceHandler();
   }
 
