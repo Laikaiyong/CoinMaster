@@ -161,13 +161,16 @@ Try these commands:
   Example: /price
 
 • /value [token] - Get Price of a specific token
-  Example: /value BTC
+  Example: /value HYPE/USDC
+  Refer: <a href="https://app.hyperliquid.xyz/trade/PURR/USDC">Hyperliquid</a>
 
 • /order [token] [buy/sell] [amount] - Place an order
-  Example: /order BTC buy 0.1
+  Example: /order BTC-PERP buy 0.1
+  Refer: <a href="https://app.hyperliquid.xyz/trade/PURR/USDC">Hyperliquid</a>
 
 • /trade [token_name] - Trade Decision Making
   Example: /trade ethereum
+  Refer: <a href="https://docs.coingecko.com/v3.0.1/reference/coins-list">Coingecko coin list</a>
 
 Type /help for more features!`;
 
@@ -187,18 +190,18 @@ Type /help for more features!`;
     });
 
     this.bot.onText(/\/value (.+)/, async (msg, match) => {
-      const symbol = match[1].toUpperCase() + "/PERP";
+      const symbol = match[1].toUpperCase();
       const ticker = await this.exchange.fetchTickers([symbol]);
       
       await this.bot.sendMessage(msg.chat.id, 
-        `${symbol}\nPrice: $${ticker.last}\nChange: ${ticker.percentage}%\nVolume: ${ticker.baseVolume}`
+        `${symbol}\nPrice: $${ticker[symbol].last}\nVolume: ${ticker[symbol].quoteVolume}`
       );
     });
 
     this.bot.onText(/\/order (.+) (.+) (.+)/, async (msg, match) => {
       const [_, symbol, side, amount] = match;
       const response = await this.createOrder(
-        symbol.toUpperCase() + '/PERP',
+        symbol.toUpperCase(),
         'market',
         side.toLowerCase(),
         parseFloat(amount)
@@ -246,7 +249,7 @@ Trading Analysis for ${symbol}:
 • Recommendation: ${analysis.recommendation}
 • Confidence: ${(analysis.confidence * 100).toFixed(1)}%
 • Risk Level: ${analysis.risk}
-• Reasoning: ${analysis.reasoning}
+• Reasoning:\n${analysis.reasoning}
 
 Your Wallet: ${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}
 Balance: ${balanceInEth} CBTC
