@@ -20,7 +20,8 @@ class CryptoTradingBot {
   }
 
   setupCore() {
-    this.exchange = new ccxt.hyperliquid();
+    this.exchange = new ccxt.hyperliquid(); //add private key here
+    this.exchange.setSandboxMode(true); // Use testnet for trading
     var web3Provider = new HttpProvider("https://rpc.testnet.citrea.xyz");
     this.web3 = new Web3(web3Provider);
     this.bot = new TelegramBot(process.env.TG_API_KEY, { polling: true });
