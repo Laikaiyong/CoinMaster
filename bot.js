@@ -227,7 +227,7 @@ Type /help for more features!`;
         .single();
       const newBalance = wallet.balance + 1;
 
-      this.updateBalance(msg.from_id, newBalance);
+      this.updateBalance(msg.from.id, newBalance);
 
       let balanceMessage = `CBTC: ${newBalance}\n`;
 
