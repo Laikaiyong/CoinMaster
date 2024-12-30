@@ -1,3 +1,21 @@
+import { lockTokens } from "./api/arbitrum/api";
+import {
+approve,
+burn,
+mint,
+transfer,
+transferFrom,
+transferOwnership,
+renounceOwnership,
+allowance,
+balanceOf,
+decimals,
+name,
+owner,
+symbol,
+totalSupply
+} from "./api/citrea/api";
+
 const express = require("express");
 const ccxt = require("ccxt");
 
