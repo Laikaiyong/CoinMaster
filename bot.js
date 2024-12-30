@@ -1,5 +1,5 @@
-import { lockTokens } from "./api/arbitrum/api";
-import {
+const{ lockTokens }  = require("./api/arbitrum/api");
+const {
 approve,
 burn,
 mint,
@@ -14,7 +14,7 @@ name,
 owner,
 symbol,
 totalSupply
-} from "./api/citrea/api";
+}  = require("./api/citrea/api");
 
 const express = require("express");
 const ccxt = require("ccxt");

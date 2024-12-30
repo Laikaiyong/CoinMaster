@@ -1,10 +1,9 @@
-import abi from './abi.json';
+const abi = require('./abi.json');
+const { Web3 } = require('web3');
 
-const Web3 = require('web3');
+const web3 = new Web3('https://rpc.testnet.citrea.xyz');
 
-const web3 = new Web3('https://citrea-testnet.infura.io/v3/YOUR_INFURA_PROJECT_ID');
-
-const contractAddress = '0xcbd40b7a44c23a8a6eb58cde919588af69be33d147c9e32480c0215beef189ac';
+const contractAddress = '0x02AB9DC4312B504F0415EAa5Fa8eF61cd5e580A4';
 const contract = new web3.eth.Contract(abi, contractAddress);
 
 async function approve(spender, value, fromAddress, privateKey) {

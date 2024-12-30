@@ -1,14 +1,13 @@
-import abi from './abi.json';
+const abi = require('./abi.json');
+const { Web3 } = require('web3');
 
-const Web3 = require('web3');
-
-const web3 = new Web3('https://sepolia.arbitrum.io/rpc'); // Replace with your Arbitrum Sepolia RPC URL
+const web3 = new Web3('https://sepolia-rollup.arbitrum.io/rpc'); // Replace with your Arbitrum Sepolia RPC URL
 
 const contractAddress = '0x64af0b36c84fee48ab552093fb5f9bf16f4bafa2'; // Replace with your contract address
 const contract = new web3.eth.Contract(abi, contractAddress);
 
 // Example function to lock tokens
-export async function lockTokens(amount, destinationAddress, fromAddress, privateKey) {
+async function lockTokens(amount, destinationAddress, fromAddress, privateKey) {
     const tx = contract.methods.lockTokens(amount, destinationAddress);
     const gas = await tx.estimateGas({ from: fromAddress });
     const gasPrice = await web3.eth.getGasPrice();
@@ -31,10 +30,14 @@ export async function lockTokens(amount, destinationAddress, fromAddress, privat
     console.log('Transaction receipt:', receipt);
 }
 
-// Example usage
-const fromAddress = '0xYourAddress'; // Replace with your address
-const privateKey = '0xYourPrivateKey'; // Replace with your private key
-const amount = web3.utils.toWei('1', 'ether'); // Replace with the amount to lock
-const destinationAddress = '0xDestinationAddress'; // Replace with the destination address
+// // Example usage
+// const fromAddress = '0xYourAddress'; // Replace with your address
+// const privateKey = '0xYourPrivateKey'; // Replace with your private key
+// const amount = web3.utils.toWei('1', 'ether'); // Replace with the amount to lock
+// const destinationAddress = '0xDestinationAddress'; // Replace with the destination address
 
-lockTokens(amount, destinationAddress, fromAddress, privateKey);
+// lockTokens(amount, destinationAddress, fromAddress, privateKey);
+
+module.exports = {
+    lockTokens
+};
