@@ -1103,7 +1103,7 @@ Balance: ${balanceInEth} CBTC
     return {
       price_trend: this.calculateTrend(closes),
       volume_trend: this.calculateTrend(volumes),
-      volatility: this.calculateVolatility(closes),
+      volatility: this.calculateVolatilityNew(closes),
     };
   }
 
@@ -1123,7 +1123,7 @@ Balance: ${balanceInEth} CBTC
     return change > 0.02 ? "BULLISH" : change < -0.02 ? "BEARISH" : "NEUTRAL";
   }
 
-  calculateVolatility(values) {
+  calculateVolatilityNew(values) {
     const mean = values.reduce((a, b) => a + b) / values.length;
     const variance =
       values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
