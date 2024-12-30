@@ -1,4 +1,6 @@
 const express = require("express");
+const ccxt = require('ccxt');
+
 const app = express();
 const port = 3000;
 
@@ -18,6 +20,7 @@ class CryptoTradingBot {
   }
 
   setupCore() {
+    this.exchange = new ccxt.hyperliquid();
     var web3Provider = new HttpProvider("https://rpc.testnet.citrea.xyz");
     this.web3 = new Web3(web3Provider);
     this.bot = new TelegramBot(process.env.TG_API_KEY, { polling: true });
@@ -149,12 +152,22 @@ class CryptoTradingBot {
       welcomeMessage += `Your Citrea Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>\n\n`;
       welcomeMessage += `Balances:\n${balanceMessage}\n`;
       welcomeMessage += `I can help you with:
+
 📊 Trading Analysis & Strategies
 💹 Market Analysis
 
 Try these commands:
 • /price - Get Trending token current price
-• /trade [token] - Execute trades
+  Example: /price
+
+• /value [token] - Get Price of a specific token
+  Example: /value BTC
+
+• /order [token] [buy/sell] [amount] - Place an order
+  Example: /order BTC buy 0.1
+
+• /trade [token_name] - Trade Decision Making
+  Example: /trade ethereum
 
 Type /help for more features!`;
 
@@ -171,6 +184,45 @@ Type /help for more features!`;
         parse_mode: 'HTML',
         reply_markup: keyboard
       });
+    });
+
+    this.bot.onText(/\/value (.+)/, async (msg, match) => {
+      const symbol = match[1].toUpperCase() + "/PERP";
+      const ticker = await this.exchange.fetchTickers([symbol]);
+      
+      await this.bot.sendMessage(msg.chat.id, 
+        `${symbol}\nPrice: $${ticker.last}\nChange: ${ticker.percentage}%\nVolume: ${ticker.baseVolume}`
+      );
+    });
+
+    this.bot.onText(/\/order (.+) (.+) (.+)/, async (msg, match) => {
+      const [_, symbol, side, amount] = match;
+      const response = await this.createOrder(
+        symbol.toUpperCase() + '/PERP',
+        'market',
+        side.toLowerCase(),
+        parseFloat(amount)
+      );
+
+      await this.bot.sendMessage(msg.chat.id, 
+        response.success ? 
+          `Order executed:\nSymbol: ${symbol}\nSide: ${side}\nAmount: ${amount}` :
+          `Order failed: ${response.error}`
+      );
+    });
+
+    this.bot.onText(/\/analyze (.+)/, async (msg, match) => {
+      const symbol = match[1].toUpperCase() + '';
+      const analysis = await this.analyzeMarket(symbol);
+      
+      if (!analysis) {
+        await this.bot.sendMessage(msg.chat.id, "Error analyzing market");
+        return;
+      }
+
+      await this.bot.sendMessage(msg.chat.id,
+        `${symbol} Analysis:\n• Action: ${analysis.action}\n• Confidence: ${(analysis.confidence * 100).toFixed(1)}%\n\nReasoning:\n${analysis.reasoning.join('\n')}`
+      );
     });
 
     this.bot.onText(/\/trade (.+)/, async (msg, match) => {
@@ -411,6 +463,107 @@ Balance: ${balanceInEth} CBTC
         confidence: 0.5,
         reasoning: "Error analyzing market conditions",
         risk: "UNKNOWN",
+      };
+    }
+  }
+
+  async createOrder(symbol, type, side, amount, price = null, params = {}) {
+    try {
+      
+      // Convert parameter format for Hyperliquid
+      const orderParams = {
+        ...params,
+        marginMode: 'cross', // Hyperliquid default
+        leverage: params.leverage || 1
+      };
+
+      let order;
+      switch(type.toLowerCase()) {
+        case 'market':
+          order = await this.exchange.createOrder(
+            symbol,
+            'market',
+            side,
+            amount,
+            undefined,
+            orderParams
+          );
+          break;
+          
+        case 'limit':
+          if (!price) throw new Error('Price required for limit orders');
+          order = await this.exchange.createOrder(
+            symbol,
+            'limit',
+            side,
+            amount,
+            price,
+            orderParams
+          );
+          break;
+          
+        case 'stop':
+          if (!params.stopPrice) throw new Error('Stop price required');
+          order = await this.exchange.createOrder(
+            symbol,
+            'stop',
+            side,
+            amount,
+            price,
+            {
+              ...orderParams,
+              stopPrice: params.stopPrice,
+              triggerType: 'mark_price'
+            }
+          );
+          break;
+          
+        default:
+          throw new Error(`Unsupported order type: ${type}`);
+      }
+
+      // Log the order for debugging
+      console.log('Order created:', order);
+
+      return {
+        success: true,
+        orderId: order.id,
+        status: order.status,
+        details: {
+          symbol: order.symbol,
+          side: order.side,
+          amount: order.amount,
+          price: order.price,
+          type: order.type,
+          timestamp: order.timestamp
+        }
+      };
+
+    } catch (error) {
+      console.error('Order creation error:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  async closePosition(symbol) {
+    try {
+      const position = await this.exchange.fetchPosition(symbol);
+      if (!position || position.contracts === 0) {
+        return { success: false, error: 'No open position' };
+      }
+
+      const side = position.side === 'long' ? 'sell' : 'buy';
+      const amount = Math.abs(position.contracts);
+
+      return await this.createOrder(symbol, 'market', side, amount, null, { reduceOnly: true });
+
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
       };
     }
   }
@@ -736,6 +889,72 @@ Balance: ${balanceInEth} CBTC
     const publicInterest = sentiment.public > 0.6 ? "strong" : sentiment.public > 0.3 ? "moderate" : "low";
   
     return `Community sentiment is ${communityStatus}, developer confidence is ${devConfidence}, public interest is ${publicInterest}`;
+  }
+
+  async analyzeMarket(symbol) {
+    try {
+      await this.exchange.loadMarkets();
+      const [ticker, orderbook, ohlcv] = await Promise.all([
+        this.exchange.fetchTickers([symbol]),
+        this.exchange.fetchOrderBook(symbol),
+        this.exchange.fetchOHLCV(symbol, '1h', undefined, 24)
+      ]);
+
+      const technicalAnalysis = this.analyzeTechnicals(ohlcv);
+      const marketDepth = this.analyzeOrderbook(orderbook);
+      
+      const analysis = await this.model.generateContent(`
+        Analyze market data:
+        Price: ${ticker.last}
+        24h Change: ${ticker.percentage}%
+        Volume: ${ticker.baseVolume}
+        Technical Analysis: ${JSON.stringify(technicalAnalysis)}
+        Market Depth: ${JSON.stringify(marketDepth)}
+        
+        Provide trading recommendation as JSON:
+        {
+          "action": "BUY/SELL/HOLD",
+          "confidence": 0-1,
+          "reasoning": ["reason1", "reason2"]
+        }`);
+
+      return JSON.parse(analysis.response.text());
+    } catch (error) {
+      console.error("Analysis error:", error);
+      return null;
+    }
+  }
+
+  analyzeTechnicals(ohlcv) {
+    const closes = ohlcv.map(candle => candle[4]);
+    const volumes = ohlcv.map(candle => candle[5]);
+    
+    return {
+      price_trend: this.calculateTrend(closes),
+      volume_trend: this.calculateTrend(volumes),
+      volatility: this.calculateVolatility(closes)
+    };
+  }
+
+  analyzeOrderbook(orderbook) {
+    const bidVolume = orderbook.bids.reduce((sum, [_, vol]) => sum + vol, 0);
+    const askVolume = orderbook.asks.reduce((sum, [_, vol]) => sum + vol, 0);
+    
+    return {
+      bid_ask_ratio: bidVolume / askVolume,
+      spread: (orderbook.asks[0][0] - orderbook.bids[0][0]) / orderbook.bids[0][0]
+    };
+  }
+
+  calculateTrend(values) {
+    const change = (values[values.length - 1] - values[0]) / values[0];
+    return change > 0.02 ? "BULLISH" : change < -0.02 ? "BEARISH" : "NEUTRAL";
+  }
+
+  calculateVolatility(values) {
+    const mean = values.reduce((a, b) => a + b) / values.length;
+    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+    return Math.sqrt(variance) / mean;
   }
 
   updateMarketPatterns(symbol, signals, recommendation) {

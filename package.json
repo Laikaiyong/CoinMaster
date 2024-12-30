@@ -8,6 +8,7 @@
     "@goat-sdk/core": "^0.4.3",
     "@google/generative-ai": "^0.21.0",
     "@supabase/supabase-js": "^2.47.8",
+    "ccxt": "^4.4.43",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "node-telegram-bot-api": "^0.66.0",
