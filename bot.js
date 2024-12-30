@@ -58,7 +58,6 @@ class CryptoTradingBot {
             `${this.marketEndpoints.coin}${symbol}?x_cg_demo_api_key=${process.env.CG_API_KEY}&tickers=true&market_data=true&community_data=true&developer_data=true&sparkline=true`
           );
           const data = await response.json();
-          console.log(data);
 
           // Store historical sentiment
             this.memory.sentimentHistory.set(
@@ -91,7 +90,6 @@ class CryptoTradingBot {
             `${this.marketEndpoints.trends}?x_cg_demo_api_key=${process.env.CG_API_KEY}`
           );
           const data = await response.json();
-          console.log(data);
           return data;
         } catch (error) {
           console.error("Market trends fetch error:", error);
@@ -105,7 +103,6 @@ class CryptoTradingBot {
             `${this.marketEndpoints.global}?x_cg_demo_api_key=${process.env.CG_API_KEY}`
           );
           const data = await response.json();
-          console.log(data);
           return data;
         } catch (error) {
           console.error("Global metrics fetch error:", error);
@@ -448,7 +445,6 @@ Balance: ${balanceInEth} CBTC
 
       const response = await result.response;
       const rawAnalysis = response.text();
-      console.log(rawAnalysis);
       const analysis = JSON.parse(rawAnalysis);
 
       return {
@@ -844,7 +840,6 @@ Balance: ${balanceInEth} CBTC
           `&ids=bitcoin,ethereum,binancecoin&vs_currencies=usd`
       );
       const prices = await response.json();
-      console.log(prices);
 
       const priceInfo =
         `Latest Prices:\n` +
