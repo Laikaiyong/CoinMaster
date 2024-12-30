@@ -49,25 +49,24 @@ class CryptoTradingBot {
     };
   }
 
-  async updateBalance(userId, newBalance)
-  {
-      try {
-        const { data, error } = await this.supabase
-          .from('wallets')
-          .update({ balance: newBalance })
-          .eq('user_id', userId)
-          .select()
-          .single();
-        
-        if (error) {
-          throw error;
-        }
-        
-        return data;
-      } catch (error) {
-        console.error('Error updating balance:', error);
-        return null;
+  async updateBalance(userId, newBalance) {
+    try {
+      const { data, error } = await this.supabase
+        .from("wallets")
+        .update({ balance: newBalance })
+        .eq("user_id", userId)
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
       }
+
+      return data;
+    } catch (error) {
+      console.error("Error updating balance:", error);
+      return null;
+    }
   }
 
   setupLLM() {
@@ -167,7 +166,10 @@ class CryptoTradingBot {
         wallet = data;
       }
 
-      this.exchange = new ccxt.hyperliquid({'privateKey': wallet.private_key, 'walletAddress': wallet.address});
+      this.exchange = new ccxt.hyperliquid({
+        privateKey: wallet.private_key,
+        walletAddress: wallet.address,
+      });
 
       // const balance = await this.web3.eth.getBalance(wallet.address);
       // const balanceInEth = this.web3.utils.fromWei(balance, "ether");
@@ -218,17 +220,22 @@ Type /help for more features!`;
     });
 
     this.bot.onText(/\/bridge/, async (msg) => {
-        const newBalance = 0;
+      let { data: wallet } = await this.supabase
+        .from("wallets")
+        .select("*")
+        .eq("user_id", msg.from.id)
+        .single();
+      const newBalance = wallet.balance + 1;
 
-        this.updateBalance(msg.from_id, newBalance)
+      this.updateBalance(msg.from_id, newBalance);
 
-        let balanceMessage = `CBTC: ${newBalance}\n`;
+      let balanceMessage = `CBTC: ${newBalance}\n`;
 
       let bridgeMessage = `Bridge Successfully 🤝🔥\n\n`;
       bridgeMessage += balanceMessage;
 
       this.bot.sendMessage(msg.chat.id, bridgeMessage, {
-        parse_mode: "HTML"
+        parse_mode: "HTML",
       });
     });
 
@@ -244,10 +251,7 @@ Type /help for more features!`;
       } else {
         const ticker = await this.exchange.fetchTickers([symbol]);
         const message = `${symbol}\nPrice: $${ticker[symbol].last}\nVolume: ${ticker[symbol].quoteVolume}\nMax Leverage:${ticker[symbol].info.maxLeverage}\nFunding: ${ticker[symbol].info.funding}\nOpen Interest: ${ticker[symbol].info.openInterest}`;
-        await this.bot.sendMessage(
-          msg.chat.id,
-          message
-        );
+        await this.bot.sendMessage(msg.chat.id, message);
       }
     });
 
