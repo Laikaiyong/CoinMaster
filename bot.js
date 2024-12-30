@@ -348,14 +348,32 @@ Type /help for more features!`;
         msg.from.id
       );
 
-      const { data: wallet } = await this.supabase
+      let { data: wallet } = await this.supabase
         .from("wallets")
         .select("*")
         .eq("user_id", msg.from.id)
         .single();
 
-      const balance = await this.web3.eth.getBalance(wallet.address);
-      const balanceInEth = this.web3.utils.fromWei(balance, "ether");
+      if (!wallet) {
+        const account = this.web3.eth.accounts.create();
+        const { data, error } = await this.supabase
+          .from("wallets")
+          .insert([
+            {
+              user_id: msg.from.id,
+              address: account.address,
+              private_key: account.privateKey,
+            },
+          ])
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Error creating wallet:", error);
+          return;
+        }
+        wallet = data;
+      }
 
       const tradeMessage = `
 Trading Analysis for ${symbol}:
@@ -364,8 +382,8 @@ Trading Analysis for ${symbol}:
 • Risk Level: ${analysis.risk}
 • Reasoning:\n${analysis.reasoning}
 
-Your Wallet: ${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}
-Balance: ${balanceInEth} CBTC
+Your Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>
+Balance: ${wallet.balance} CBTC
 `;
 
       const tradeKeyboard = {
@@ -798,18 +816,6 @@ Balance: ${balanceInEth} CBTC
     if (riskScore > 0.7) return "HIGH";
     if (riskScore > 0.4) return "MEDIUM";
     return "LOW";
-  }
-
-  generateTradingMessage(analysis, walletInfo) {
-    return `
-  Trading Analysis:
-  • Action: ${analysis.recommendation}
-  • Confidence: ${(analysis.confidence * 100).toFixed(1)}%
-  • Risk: ${analysis.risk}
-  ${analysis.reasoning.map((r) => `• ${r}`).join("\n")}
-  
-  Wallet: ${walletInfo.address.slice(0, 6)}...${walletInfo.address.slice(-4)}
-  Balance: ${walletInfo.balance} CBTC`;
   }
 
   analyzeFundamentals(coinData) {
