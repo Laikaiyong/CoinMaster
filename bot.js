@@ -153,17 +153,10 @@ class CryptoTradingBot {
       welcomeMessage += `Balances:\n${balanceMessage}\n`;
       welcomeMessage += `I can help you with:
 📊 Trading Analysis & Strategies
-🪙 Memecoin Creation & Deployment
-📈 Token Contract Development
 💹 Market Analysis
 
 Try these commands:
-• /price BTC - Get BTC price analysis
-• /deploy - Guide to deploying your memecoin
-• /liquidity - Learn about liquidity pool setup
-• /chart [token] - Get technical analysis
-• /risk - Important risk management tips
-• /predict [message] - Get market predictions
+• /price - Get Trending token current price
 • /trade [token] - Execute trades
 
 Type /help for more features!`;
@@ -172,16 +165,8 @@ Type /help for more features!`;
         inline_keyboard: [
           [
             { text: "📊 Price Analysis", callback_data: "menu_price" },
-            { text: "📈 Trading Tools", callback_data: "menu_tools" },
-          ],
-          [
-            { text: "🪙 Memecoin Guide", callback_data: "menu_memecoin" },
-            { text: "⚠️ Risk Management", callback_data: "menu_risk" },
-          ],
-          [
             { text: "💰 Check Balance", callback_data: "check_balance" },
-            { text: "🔄 Trade Now", callback_data: "trade_now" },
-          ],
+          ]
         ],
       };
 
@@ -845,54 +830,10 @@ Balance: ${balanceInEth} CBTC
     await this.bot.answerCallbackQuery(query.id);
   }
 
-  setupPredictionHandler() {
-    this.bot.onText(/\/predict (.+)/, async (msg, match) => {
-      const userMessage = match[1];
-      const prediction = await this.getPrediction(userMessage);
-      await this.bot.sendMessage(
-        msg.chat.id,
-        `Prediction: ${prediction.response.response}`
-      );
-    });
-  }
-
-  setupRiskHandler() {
-    this.bot.onText(/\/risk/, async (msg) => {
-      const riskAdvice = await this.handleRiskManagement(
-        "Provide risk management tips for cryptocurrency trading"
-      );
-      await this.bot.sendMessage(
-        msg.chat.id,
-        `Risk Management Advice: ${riskAdvice.response.response}`
-      );
-    });
-  }
-
   setupPriceHandler() {
-    this.bot.onText(/\/price (.+)/, async (msg, match) => {
-      const symbol = match[1].toUpperCase();
-      try {
-        const response = await fetch(
-          `${this.marketEndpoints.price}?x_cg_demo_api_key=` +
-            process.env.CG_API_KEY +
-            `&ids=${symbol.toLowerCase()}&vs_currencies=usd`
-        );
-        const data = await response.json();
-        console.log(data);
-        const price = data[symbol.toLowerCase()]?.usd;
-
-        if (price) {
-          await this.bot.sendMessage(msg.chat.id, `${symbol} Price: $${price}`);
-        } else {
-          await this.bot.sendMessage(
-            msg.chat.id,
-            `Could not fetch price for ${symbol}`
-          );
-        }
-      } catch (error) {
-        console.error("Price fetch error:", error);
-        await this.bot.sendMessage(msg.chat.id, "Error fetching price data");
-      }
+    this.bot.onText(/\/price/, async (msg) => {
+      // Trigger the sendPriceMenu function directly
+      await this.sendPriceMenu(msg.chat.id);
     });
   }
 
@@ -919,63 +860,6 @@ Balance: ${balanceInEth} CBTC
       console.error("Price menu error:", error);
       await this.bot.sendMessage(chatId, "Error fetching price data");
     }
-  }
-
-  async sendToolsMenu(chatId) {
-    const toolsInfo =
-      "Here are some trading tools you can use:\n" +
-      "• Price Alerts: Set alerts for price changes.\n" +
-      "• Portfolio Tracker: Keep track of your investments.\n" +
-      "• Market Analysis: Get insights on market trends.\n" +
-      "For more information, type /help.";
-
-    await this.bot.sendMessage(chatId, toolsInfo);
-  }
-
-  async sendMemecoinMenu(chatId) {
-    const memecoinInfo =
-      "Interested in creating your own memecoin? Here's how:\n" +
-      "1. Define your concept and purpose.\n" +
-      "2. Choose a blockchain (e.g., Citrea).\n" +
-      "3. Use our deployment guide to create your token.\n" +
-      "For more assistance, type /deploy.";
-
-    await this.bot.sendMessage(chatId, memecoinInfo);
-  }
-
-  async sendRiskMenu(chatId) {
-    const riskInfo =
-      "Risk management is crucial in trading. Here are some tips:\n" +
-      "• Never invest more than you can afford to lose.\n" +
-      "• Diversify your portfolio to mitigate risks.\n" +
-      "• Set stop-loss orders to limit potential losses.\n" +
-      "For more detailed strategies, type /risk.";
-
-    await this.bot.sendMessage(chatId, riskInfo);
-  }
-
-  async getPrediction(userMessage) {
-    const response = await fetch(this.cloudflareEndpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ prompt: userMessage }),
-    });
-    const data = await response.json();
-    return data;
-  }
-
-  async handleRiskManagement(userMessage) {
-    const response = await fetch(this.cloudflareEndpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ prompt: userMessage }),
-    });
-    const data = await response.json();
-    return data;
   }
 }
 
