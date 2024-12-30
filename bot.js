@@ -1,5 +1,5 @@
 const express = require("express");
-const ccxt = require('ccxt');
+const ccxt = require("ccxt");
 
 const app = express();
 const port = 3000;
@@ -48,6 +48,27 @@ class CryptoTradingBot {
     };
   }
 
+  async updateBalance(userId, newBalance)
+  {
+      try {
+        const { data, error } = await this.supabase
+          .from('wallets')
+          .update({ balance: newBalance })
+          .eq('user_id', userId)
+          .select()
+          .single();
+        
+        if (error) {
+          throw error;
+        }
+        
+        return data;
+      } catch (error) {
+        console.error('Error updating balance:', error);
+        return null;
+      }
+  }
+
   setupLLM() {
     const { GoogleGenerativeAI } = require("@google/generative-ai");
     this.llm = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -63,22 +84,23 @@ class CryptoTradingBot {
           const data = await response.json();
 
           // Store historical sentiment
-            this.memory.sentimentHistory.set(
+          this.memory.sentimentHistory.set(
             symbol,
             [
               ...(this.memory.sentimentHistory.get(symbol) || []),
               {
-              timestamp: Date.now(),
-              data: {
-                sentiment_votes_up: data?.sentiment_votes_up_percentage ?? 0,
-                sentiment_votes_down: data?.sentiment_votes_down_percentage ?? 0,
-                community_score: data?.community_data?.twitter_followers ?? 0,
-                developer_score: data?.developer_data?.stars ?? 0,
-                public_interest_score: data?.trust_score ?? 0,
-              },
+                timestamp: Date.now(),
+                data: {
+                  sentiment_votes_up: data?.sentiment_votes_up_percentage ?? 0,
+                  sentiment_votes_down:
+                    data?.sentiment_votes_down_percentage ?? 0,
+                  community_score: data?.community_data?.twitter_followers ?? 0,
+                  developer_score: data?.developer_data?.stars ?? 0,
+                  public_interest_score: data?.trust_score ?? 0,
+                },
               },
             ].slice(-100)
-            ); // Keep last 100 entries
+          ); // Keep last 100 entries
 
           return data;
         } catch (error) {
@@ -144,9 +166,12 @@ class CryptoTradingBot {
         wallet = data;
       }
 
-      const balance = await this.web3.eth.getBalance(wallet.address);
-      const balanceInEth = this.web3.utils.fromWei(balance, "ether");
-      let balanceMessage = `CBTC: ${balanceInEth}\n`;
+      this.exchange = new ccxt.hyperliquid({'privateKey': wallet.private_key, 'walletAddress': wallet.address});
+
+      // const balance = await this.web3.eth.getBalance(wallet.address);
+      // const balanceInEth = this.web3.utils.fromWei(balance, "ether");
+      // let balanceMessage = `CBTC: ${balanceInEth}\n`;
+      let balanceMessage = `CBTC: ${wallet.balance}\n`;
 
       let welcomeMessage = `Welcome to Citrea Trading & Memecoin Assistant! 🚀\n\n`;
       welcomeMessage += `Your Citrea Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>\n\n`;
@@ -165,12 +190,14 @@ Try these commands:
   Refer: <a href="https://app.hyperliquid.xyz/trade/PURR/USDC">Hyperliquid</a>
 
 • /order [token] [buy/sell] [amount] - Place an order
-  Example: /order BTC-PERP buy 0.1
+  Example: /order BTC/USDC:USDC buy 0.1
   Refer: <a href="https://app.hyperliquid.xyz/trade/PURR/USDC">Hyperliquid</a>
 
 • /trade [token_name] - Trade Decision Making
   Example: /trade ethereum
   Refer: <a href="https://docs.coingecko.com/v3.0.1/reference/coins-list">Coingecko coin list</a>
+
+• /bridge - Bridge Token
 
 Type /help for more features!`;
 
@@ -179,52 +206,81 @@ Type /help for more features!`;
           [
             { text: "📊 Price Analysis", callback_data: "menu_price" },
             { text: "💰 Check Balance", callback_data: "check_balance" },
-          ]
+          ],
         ],
       };
 
       this.bot.sendMessage(msg.chat.id, welcomeMessage, {
-        parse_mode: 'HTML',
-        reply_markup: keyboard
+        parse_mode: "HTML",
+        reply_markup: keyboard,
+      });
+    });
+
+    this.bot.onText(/\/bridge/, async (msg) => {
+        const newBalance = 0;
+
+        this.updateBalance(msg.from_id, newBalance)
+
+        let balanceMessage = `CBTC: ${newBalance}\n`;
+
+      let bridgeMessage = `Bridge Successfully 🤝🔥\n\n`;
+      bridgeMessage += balanceMessage;
+
+      this.bot.sendMessage(msg.chat.id, bridgeMessage, {
+        parse_mode: "HTML"
       });
     });
 
     this.bot.onText(/\/value (.+)/, async (msg, match) => {
       const symbol = match[1].toUpperCase();
-      const ticker = await this.exchange.fetchTickers([symbol]);
-      
-      await this.bot.sendMessage(msg.chat.id, 
-        `${symbol}\nPrice: $${ticker[symbol].last}\nVolume: ${ticker[symbol].quoteVolume}`
-      );
+
+      if (symbol == "ALL") {
+        const ticker = await this.exchange.fetchTickers();
+        for (const symbol in ticker) {
+          const message = `${symbol}\nPrice: $${ticker[symbol].last}\nVolume: ${ticker[symbol].quoteVolume}\nMax Leverage:${ticker[symbol].info.maxLeverage}\nFunding: ${ticker[symbol].info.funding}\nOpen Interest: ${ticker[symbol].info.openInterest}`;
+          await this.bot.sendMessage(msg.chat.id, message);
+        }
+      } else {
+        const ticker = await this.exchange.fetchTickers([symbol]);
+        const message = `${symbol}\nPrice: $${ticker[symbol].last}\nVolume: ${ticker[symbol].quoteVolume}\nMax Leverage:${ticker[symbol].info.maxLeverage}\nFunding: ${ticker[symbol].info.funding}\nOpen Interest: ${ticker[symbol].info.openInterest}`;
+        await this.bot.sendMessage(
+          msg.chat.id,
+          message
+        );
+      }
     });
 
     this.bot.onText(/\/order (.+) (.+) (.+)/, async (msg, match) => {
       const [_, symbol, side, amount] = match;
       const response = await this.createOrder(
         symbol.toUpperCase(),
-        'market',
+        "market",
         side.toLowerCase(),
         parseFloat(amount)
       );
 
-      await this.bot.sendMessage(msg.chat.id, 
-        response.success ? 
-          `Order executed:\nSymbol: ${symbol}\nSide: ${side}\nAmount: ${amount}` :
-          `Order failed: ${response.error}`
+      await this.bot.sendMessage(
+        msg.chat.id,
+        response.success
+          ? `Order executed:\nSymbol: ${symbol}\nSide: ${side}\nAmount: ${amount}`
+          : `Order failed: ${response.error}`
       );
     });
 
     this.bot.onText(/\/analyze (.+)/, async (msg, match) => {
-      const symbol = match[1].toUpperCase() + '';
+      const symbol = match[1].toUpperCase() + "";
       const analysis = await this.analyzeMarket(symbol);
-      
+
       if (!analysis) {
         await this.bot.sendMessage(msg.chat.id, "Error analyzing market");
         return;
       }
 
-      await this.bot.sendMessage(msg.chat.id,
-        `${symbol} Analysis:\n• Action: ${analysis.action}\n• Confidence: ${(analysis.confidence * 100).toFixed(1)}%\n\nReasoning:\n${analysis.reasoning.join('\n')}`
+      await this.bot.sendMessage(
+        msg.chat.id,
+        `${symbol} Analysis:\n• Action: ${analysis.action}\n• Confidence: ${(
+          analysis.confidence * 100
+        ).toFixed(1)}%\n\nReasoning:\n${analysis.reasoning.join("\n")}`
       );
     });
 
@@ -279,130 +335,138 @@ Balance: ${balanceInEth} CBTC
 
   analyzeTechnicalSignals(coinData) {
     if (!coinData.market_data) return 0;
-  
+
     const priceData = {
       current: coinData?.market_data?.current_price?.usd ?? 0,
       high24h: coinData?.market_data?.high_24h?.usd ?? 0,
       low24h: coinData?.market_data?.low_24h?.usd ?? 0,
       priceChange: coinData?.market_data?.price_change_percentage_24h ?? 0,
       priceChange7d: coinData?.market_data?.price_change_percentage_7d ?? 0,
-      priceChange30d: coinData?.market_data?.price_change_percentage_30d ?? 0
+      priceChange30d: coinData?.market_data?.price_change_percentage_30d ?? 0,
     };
-  
+
     // Calculate basic technical indicators
     const rsi = this.calculateRSI(priceData);
     const momentum = this.calculateMomentum(priceData);
     const volatility = this.calculateVolatility(priceData);
-  
+
     return {
       rsi: rsi,
       momentum: momentum,
       volatility: volatility,
-      overallScore: (rsi + momentum + volatility) / 3
+      overallScore: (rsi + momentum + volatility) / 3,
     };
   }
-  
+
   calculateRSI(priceData) {
     const change = priceData.priceChange;
     // Simplified RSI calculation
-    return change > 0 ? 
-      Math.min(0.8, change / 10) : 
-      Math.max(-0.8, change / 10);
+    return change > 0
+      ? Math.min(0.8, change / 10)
+      : Math.max(-0.8, change / 10);
   }
-  
+
   calculateMomentum(priceData) {
     const shortTerm = priceData.priceChange / 100;
     const mediumTerm = priceData.priceChange7d / 100;
     const longTerm = priceData.priceChange30d / 100;
-    
-    return (shortTerm * 0.5 + mediumTerm * 0.3 + longTerm * 0.2);
+
+    return shortTerm * 0.5 + mediumTerm * 0.3 + longTerm * 0.2;
   }
-  
+
   calculateVolatility(priceData) {
     const range = (priceData.high24h - priceData.low24h) / priceData.current;
     return range > 0.2 ? -0.5 : range > 0.1 ? -0.2 : 0.3;
   }
-  
+
   analyzeSentiment(coinData) {
     if (!coinData) return 0;
-  
+
     const sentimentFactors = {
       communityScore: coinData.community_score || 0,
       devScore: coinData.developer_score || 0,
       publicInterest: coinData.public_interest_score || 0,
       positiveVotes: coinData.sentiment_votes_up || 0,
-      negativeVotes: coinData.sentiment_votes_down || 0
+      negativeVotes: coinData.sentiment_votes_down || 0,
     };
-  
-    const voteRatio = sentimentFactors.positiveVotes / 
+
+    const voteRatio =
+      sentimentFactors.positiveVotes /
       (sentimentFactors.positiveVotes + sentimentFactors.negativeVotes || 1);
-    
+
     const scores = {
       community: sentimentFactors.communityScore / 100,
       developer: sentimentFactors.devScore / 100,
       public: sentimentFactors.publicInterest / 100,
-      votes: voteRatio
+      votes: voteRatio,
     };
-  
+
     return {
       community: scores.community,
       developer: scores.developer,
       public: scores.public,
       votes: scores.votes,
-      overallScore: (scores.community * 0.3 + scores.developer * 0.2 + 
-                     scores.public * 0.2 + scores.votes * 0.3)
+      overallScore:
+        scores.community * 0.3 +
+        scores.developer * 0.2 +
+        scores.public * 0.2 +
+        scores.votes * 0.3,
     };
   }
 
   analyzeTrendStrength(trends, symbol) {
     if (!trends?.coins) return 0;
-  
-    const coin = trends.coins.find(c => 
-      c.item.symbol.toLowerCase() === symbol.toLowerCase()
+
+    const coin = trends.coins.find(
+      (c) => c.item.symbol.toLowerCase() === symbol.toLowerCase()
     );
-  
-    if (!coin) return {
-      trending: 0,
-      rank: 0,
-      priceChange: 0,
-      overallScore: 0
-    };
-  
+
+    if (!coin)
+      return {
+        trending: 0,
+        rank: 0,
+        priceChange: 0,
+        overallScore: 0,
+      };
+
     const trendingScore = coin.item.score || 0;
     const marketCapRank = coin.item.market_cap_rank || 999;
     const priceChange = coin.item.price_change_percentage_24h || 0;
-  
+
     return {
       trending: trendingScore,
-      rank: Math.max(0, 1 - (marketCapRank / 1000)),
-      priceChange: priceChange > 0 ? Math.min(priceChange / 100, 1) : Math.max(priceChange / 100, -1),
-      overallScore: (
-        (trendingScore * 0.4) + 
-        (Math.max(0, 1 - (marketCapRank / 1000)) * 0.3) + 
-        (Math.max(-1, Math.min(1, priceChange / 100)) * 0.3)
-      )
+      rank: Math.max(0, 1 - marketCapRank / 1000),
+      priceChange:
+        priceChange > 0
+          ? Math.min(priceChange / 100, 1)
+          : Math.max(priceChange / 100, -1),
+      overallScore:
+        trendingScore * 0.4 +
+        Math.max(0, 1 - marketCapRank / 1000) * 0.3 +
+        Math.max(-1, Math.min(1, priceChange / 100)) * 0.3,
     };
   }
-  
+
   analyzeMarketConditions(globalMetrics) {
     if (!globalMetrics?.data) return 0;
-  
+
     const metrics = {
       marketCap: globalMetrics.data.total_market_cap.usd,
       volume24h: globalMetrics.data.total_volume.usd,
       btcDominance: globalMetrics.data.market_cap_percentage.btc,
-      marketCapChange: globalMetrics.data.market_cap_change_percentage_24h_usd
+      marketCapChange: globalMetrics.data.market_cap_change_percentage_24h_usd,
     };
-  
+
     const volumeToMcap = metrics.volume24h / metrics.marketCap;
     const marketHealth = metrics.marketCapChange > 0 ? 0.6 : 0.4;
     const dominanceImpact = metrics.btcDominance > 50 ? 0.7 : 0.3;
-  
+
     return {
       liquidity: volumeToMcap,
       health: marketHealth,
       dominance: dominanceImpact,
-      overallScore: (volumeToMcap * 0.3 + marketHealth * 0.4 + dominanceImpact * 0.3)
+      overallScore:
+        volumeToMcap * 0.3 + marketHealth * 0.4 + dominanceImpact * 0.3,
     };
   }
 
@@ -453,7 +517,8 @@ Balance: ${balanceInEth} CBTC
         risk: this.calculateRiskLevel(signals),
         metrics: {
           price: coinData?.market_data?.current_price?.usd ?? 0,
-          priceChange24h: coinData?.market_data?.price_change_percentage_24h ?? 0,
+          priceChange24h:
+            coinData?.market_data?.price_change_percentage_24h ?? 0,
           volume24h: coinData?.market_data?.total_volume?.usd ?? 0,
           marketCap: coinData?.market_data?.market_cap?.usd ?? 0,
           marketCapRank: coinData.market_cap_rank,
@@ -472,61 +537,60 @@ Balance: ${balanceInEth} CBTC
 
   async createOrder(symbol, type, side, amount, price = null, params = {}) {
     try {
-      
       // Convert parameter format for Hyperliquid
       const orderParams = {
         ...params,
-        marginMode: 'cross', // Hyperliquid default
-        leverage: params.leverage || 1
+        marginMode: "cross", // Hyperliquid default
+        leverage: params.leverage || 1,
       };
 
       let order;
-      switch(type.toLowerCase()) {
-        case 'market':
+      switch (type.toLowerCase()) {
+        case "market":
           order = await this.exchange.createOrder(
             symbol,
-            'market',
+            "market",
             side,
             amount,
             undefined,
             orderParams
           );
           break;
-          
-        case 'limit':
-          if (!price) throw new Error('Price required for limit orders');
+
+        case "limit":
+          if (!price) throw new Error("Price required for limit orders");
           order = await this.exchange.createOrder(
             symbol,
-            'limit',
+            "limit",
             side,
             amount,
             price,
             orderParams
           );
           break;
-          
-        case 'stop':
-          if (!params.stopPrice) throw new Error('Stop price required');
+
+        case "stop":
+          if (!params.stopPrice) throw new Error("Stop price required");
           order = await this.exchange.createOrder(
             symbol,
-            'stop',
+            "stop",
             side,
             amount,
             price,
             {
               ...orderParams,
               stopPrice: params.stopPrice,
-              triggerType: 'mark_price'
+              triggerType: "mark_price",
             }
           );
           break;
-          
+
         default:
           throw new Error(`Unsupported order type: ${type}`);
       }
 
       // Log the order for debugging
-      console.log('Order created:', order);
+      console.log("Order created:", order);
 
       return {
         success: true,
@@ -538,15 +602,14 @@ Balance: ${balanceInEth} CBTC
           amount: order.amount,
           price: order.price,
           type: order.type,
-          timestamp: order.timestamp
-        }
+          timestamp: order.timestamp,
+        },
       };
-
     } catch (error) {
-      console.error('Order creation error:', error);
+      console.error("Order creation error:", error);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -555,18 +618,19 @@ Balance: ${balanceInEth} CBTC
     try {
       const position = await this.exchange.fetchPosition(symbol);
       if (!position || position.contracts === 0) {
-        return { success: false, error: 'No open position' };
+        return { success: false, error: "No open position" };
       }
 
-      const side = position.side === 'long' ? 'sell' : 'buy';
+      const side = position.side === "long" ? "sell" : "buy";
       const amount = Math.abs(position.contracts);
 
-      return await this.createOrder(symbol, 'market', side, amount, null, { reduceOnly: true });
-
+      return await this.createOrder(symbol, "market", side, amount, null, {
+        reduceOnly: true,
+      });
     } catch (error) {
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -622,59 +686,61 @@ Balance: ${balanceInEth} CBTC
 
   getRecommendation(weightedScore, llmAnalysis) {
     const baseRecommendation = {
-      action: 'HOLD',
-      confidence: 0.5
+      action: "HOLD",
+      confidence: 0.5,
     };
-  
+
     if (!weightedScore) return baseRecommendation;
-  
+
     // Combine algorithmic and LLM recommendations
     const algorithmicAction = this.getAlgorithmicAction(weightedScore);
-    const llmAction = llmAnalysis?.recommendation || 'HOLD';
+    const llmAction = llmAnalysis?.recommendation || "HOLD";
     const llmConfidence = llmAnalysis?.confidence || 0.5;
-  
+
     // Weight algorithmic vs LLM recommendations
-    const confidence = (weightedScore * 0.6) + (llmConfidence * 0.4);
-  
+    const confidence = weightedScore * 0.6 + llmConfidence * 0.4;
+
     // If both agree, increase confidence
-    const action = algorithmicAction === llmAction ? 
-      algorithmicAction : 
-      confidence > 0.7 ? algorithmicAction : 'HOLD';
-  
+    const action =
+      algorithmicAction === llmAction
+        ? algorithmicAction
+        : confidence > 0.7
+        ? algorithmicAction
+        : "HOLD";
+
     return {
       action,
-      confidence: Math.min(0.95, confidence)
+      confidence: Math.min(0.95, confidence),
     };
   }
-  
+
   getAlgorithmicAction(score) {
-    if (score > 0.7) return 'STRONG BUY';
-    if (score > 0.3) return 'BUY';
-    if (score < -0.7) return 'STRONG SELL';
-    if (score < -0.3) return 'SELL';
-    return 'HOLD';
+    if (score > 0.7) return "STRONG BUY";
+    if (score > 0.3) return "BUY";
+    if (score < -0.7) return "STRONG SELL";
+    if (score < -0.3) return "SELL";
+    return "HOLD";
   }
-  
+
   calculateRiskLevel(signals) {
     const riskFactors = {
       technical: Math.abs(signals.technical.overallScore || 0),
       sentiment: Math.abs(signals.sentiment.overallScore || 0),
       volume: signals.volume || 0,
-      market: (signals.market?.overallScore || 0.5),
-      volatility: signals.technical?.volatility || 0
+      market: signals.market?.overallScore || 0.5,
+      volatility: signals.technical?.volatility || 0,
     };
-  
-    const riskScore = (
+
+    const riskScore =
       riskFactors.technical * 0.3 +
       riskFactors.sentiment * 0.2 +
       (1 - riskFactors.volume) * 0.2 +
       (1 - riskFactors.market) * 0.15 +
-      riskFactors.volatility * 0.15
-    );
-  
-    if (riskScore > 0.7) return 'HIGH';
-    if (riskScore > 0.4) return 'MEDIUM';
-    return 'LOW';
+      riskFactors.volatility * 0.15;
+
+    if (riskScore > 0.7) return "HIGH";
+    if (riskScore > 0.4) return "MEDIUM";
+    return "LOW";
   }
 
   generateTradingMessage(analysis, walletInfo) {
@@ -866,31 +932,76 @@ Balance: ${balanceInEth} CBTC
 
   describeTechnicalSignals(technical) {
     if (!technical) return "Insufficient technical data";
-  
-    const rsiStatus = technical.rsi > 0.5 ? "overbought" : technical.rsi < -0.5 ? "oversold" : "neutral";
-    const momentumTrend = technical.momentum > 0.2 ? "bullish" : technical.momentum < -0.2 ? "bearish" : "sideways";
-    const volatilityLevel = technical.volatility < -0.3 ? "high" : technical.volatility > 0.2 ? "low" : "moderate";
-  
+
+    const rsiStatus =
+      technical.rsi > 0.5
+        ? "overbought"
+        : technical.rsi < -0.5
+        ? "oversold"
+        : "neutral";
+    const momentumTrend =
+      technical.momentum > 0.2
+        ? "bullish"
+        : technical.momentum < -0.2
+        ? "bearish"
+        : "sideways";
+    const volatilityLevel =
+      technical.volatility < -0.3
+        ? "high"
+        : technical.volatility > 0.2
+        ? "low"
+        : "moderate";
+
     return `RSI indicates ${rsiStatus} conditions, momentum is ${momentumTrend}, volatility is ${volatilityLevel}`;
   }
-  
+
   describeFundamentals(fundamentals) {
     if (!fundamentals) return "Insufficient fundamental data";
-  
-    const devActivity = fundamentals.developerActivity > 0.6 ? "strong" : fundamentals.developerActivity > 0.3 ? "moderate" : "low";
-    const marketMaturity = fundamentals.marketMaturity > 0.6 ? "mature" : fundamentals.marketMaturity > 0.3 ? "developing" : "early stage";
-    const tokenomicsHealth = fundamentals.tokenomics > 0.6 ? "healthy" : fundamentals.tokenomics > 0.3 ? "moderate" : "concerning";
-  
+
+    const devActivity =
+      fundamentals.developerActivity > 0.6
+        ? "strong"
+        : fundamentals.developerActivity > 0.3
+        ? "moderate"
+        : "low";
+    const marketMaturity =
+      fundamentals.marketMaturity > 0.6
+        ? "mature"
+        : fundamentals.marketMaturity > 0.3
+        ? "developing"
+        : "early stage";
+    const tokenomicsHealth =
+      fundamentals.tokenomics > 0.6
+        ? "healthy"
+        : fundamentals.tokenomics > 0.3
+        ? "moderate"
+        : "concerning";
+
     return `Developer activity is ${devActivity}, market is ${marketMaturity}, tokenomics are ${tokenomicsHealth}`;
   }
-  
+
   describeSentiment(sentiment) {
     if (!sentiment) return "Insufficient sentiment data";
-  
-    const communityStatus = sentiment.community > 0.6 ? "very positive" : sentiment.community > 0.3 ? "positive" : "neutral";
-    const devConfidence = sentiment.developer > 0.6 ? "high" : sentiment.developer > 0.3 ? "moderate" : "low";
-    const publicInterest = sentiment.public > 0.6 ? "strong" : sentiment.public > 0.3 ? "moderate" : "low";
-  
+
+    const communityStatus =
+      sentiment.community > 0.6
+        ? "very positive"
+        : sentiment.community > 0.3
+        ? "positive"
+        : "neutral";
+    const devConfidence =
+      sentiment.developer > 0.6
+        ? "high"
+        : sentiment.developer > 0.3
+        ? "moderate"
+        : "low";
+    const publicInterest =
+      sentiment.public > 0.6
+        ? "strong"
+        : sentiment.public > 0.3
+        ? "moderate"
+        : "low";
+
     return `Community sentiment is ${communityStatus}, developer confidence is ${devConfidence}, public interest is ${publicInterest}`;
   }
 
@@ -900,12 +1011,12 @@ Balance: ${balanceInEth} CBTC
       const [ticker, orderbook, ohlcv] = await Promise.all([
         this.exchange.fetchTickers([symbol]),
         this.exchange.fetchOrderBook(symbol),
-        this.exchange.fetchOHLCV(symbol, '1h', undefined, 24)
+        this.exchange.fetchOHLCV(symbol, "1h", undefined, 24),
       ]);
 
       const technicalAnalysis = this.analyzeTechnicals(ohlcv);
       const marketDepth = this.analyzeOrderbook(orderbook);
-      
+
       const analysis = await this.model.generateContent(`
         Analyze market data:
         Price: ${ticker.last}
@@ -929,23 +1040,24 @@ Balance: ${balanceInEth} CBTC
   }
 
   analyzeTechnicals(ohlcv) {
-    const closes = ohlcv.map(candle => candle[4]);
-    const volumes = ohlcv.map(candle => candle[5]);
-    
+    const closes = ohlcv.map((candle) => candle[4]);
+    const volumes = ohlcv.map((candle) => candle[5]);
+
     return {
       price_trend: this.calculateTrend(closes),
       volume_trend: this.calculateTrend(volumes),
-      volatility: this.calculateVolatility(closes)
+      volatility: this.calculateVolatility(closes),
     };
   }
 
   analyzeOrderbook(orderbook) {
     const bidVolume = orderbook.bids.reduce((sum, [_, vol]) => sum + vol, 0);
     const askVolume = orderbook.asks.reduce((sum, [_, vol]) => sum + vol, 0);
-    
+
     return {
       bid_ask_ratio: bidVolume / askVolume,
-      spread: (orderbook.asks[0][0] - orderbook.bids[0][0]) / orderbook.bids[0][0]
+      spread:
+        (orderbook.asks[0][0] - orderbook.bids[0][0]) / orderbook.bids[0][0],
     };
   }
 
@@ -956,7 +1068,8 @@ Balance: ${balanceInEth} CBTC
 
   calculateVolatility(values) {
     const mean = values.reduce((a, b) => a + b) / values.length;
-    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+    const variance =
+      values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
     return Math.sqrt(variance) / mean;
   }
 

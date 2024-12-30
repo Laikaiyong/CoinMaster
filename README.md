@@ -3,6 +3,10 @@
 ## Overview
 A sophisticated cryptocurrency trading bot built with Node.js that integrates with Telegram for user interaction. The bot provides trading analysis, market insights, and automated trading capabilities using various APIs and blockchain interactions.
 
+## Verified Smart Contracts on Block Explorer (Bridging Feature)
+- https://explorer.testnet.citrea.xyz/tx/0xcbd40b7a44c23a8a6eb58cde919588af69be33d147c9e32480c0215beef189ac
+- https://sepolia.arbiscan.io/tx/0xfc1451deabdd921a677a748ea15036310fc79919b6133d59f35bfd3279e2254b
+
 ## Agent Capabilities
 - Autonomous market analysis and trading decisions
 - Real-time response to market changes
