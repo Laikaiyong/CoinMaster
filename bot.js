@@ -1,23 +1,4 @@
-const{ lockTokens }  = require("./api/arbitrum/api");
-const {
-approve,
-burn,
-mint,
-transfer,
-transferFrom,
-transferOwnership,
-renounceOwnership,
-allowance,
-balanceOf,
-decimals,
-name,
-owner,
-symbol,
-totalSupply
-}  = require("./api/citrea/api");
-
 const express = require("express");
-const ccxt = require("ccxt");
 
 const app = express();
 const port = 3000;
@@ -25,6 +6,9 @@ const port = 3000;
 const TelegramBot = require("node-telegram-bot-api");
 const { createClient } = require("@supabase/supabase-js");
 const { Web3, HttpProvider } = require("web3");
+const axios = require("axios");
+const Groq = require("groq-sdk");
+
 const res = require("express/lib/response");
 require("dotenv").config();
 
@@ -38,22 +22,35 @@ class CryptoTradingBot {
   }
 
   setupCore() {
-    this.exchange = new ccxt.hyperliquid(); //add private key here
-    this.exchange.setSandboxMode(true); // Use testnet for trading
-    var web3Provider = new HttpProvider("https://rpc.testnet.citrea.xyz");
+    var web3Provider = new HttpProvider(process.env.RPC_URL);
     this.web3 = new Web3(web3Provider);
     this.bot = new TelegramBot(process.env.TG_API_KEY, { polling: true });
-    // this.cloudflareEndpoint = "https://tradingbot.vandycklai.workers.dev/";
     this.supabase = createClient(
       process.env.SUPABASE_URL,
       process.env.SUPABASE_KEY
     );
 
+    this.scannerUrl = process.env.SCANNER_URL;
+
     this.marketEndpoints = {
-      price: "https://api.coingecko.com/api/v3/simple/price",
-      trends: "https://api.coingecko.com/api/v3/search/trending",
-      coin: "https://api.coingecko.com/api/v3/coins/",
-      global: "https://api.coingecko.com/api/v3/global",
+      coingecko: {
+        base: "https://api.coingecko.com/api/v3",
+        price: "/simple/price",
+        trends: "/search/trending",
+        coin: "/coins",
+        global: "/global",
+      },
+      gecko_terminal: {
+        base: "https://api.geckoterminal.com/api/v2",
+        info: "/networks/bsc/tokens",
+        dex: "/networks/bsc/dexes",
+        pairs: "/networks/bsc/token_pairs",
+      },
+      dodoex: {
+        base: "https://api.dodoex.io/api/v3",
+        quote: "/quote",
+        swap: "/swap",
+      },
     };
   }
 
@@ -67,29 +64,8 @@ class CryptoTradingBot {
     };
   }
 
-  async updateBalance(userId, newBalance) {
-    try {
-      const { data, error } = await this.supabase
-        .from("wallets")
-        .update({ balance: newBalance })
-        .eq("user_id", userId)
-        .select()
-        .single();
-
-      if (error) {
-        throw error;
-      }
-
-      return data;
-    } catch (error) {
-      console.error("Error updating balance:", error);
-      return null;
-    }
-  }
-
   setupLLM() {
-    const { GoogleGenerativeAI } = require("@google/generative-ai");
-    this.llm = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    this.llm = new Groq({ apiKey: process.env.GROQ_API_KEY });
   }
 
   setupPerception() {
@@ -97,7 +73,7 @@ class CryptoTradingBot {
       getCoinSentiment: async (symbol) => {
         try {
           const response = await fetch(
-            `${this.marketEndpoints.coin}${symbol}?x_cg_demo_api_key=${process.env.CG_API_KEY}&tickers=true&market_data=true&community_data=true&developer_data=true&sparkline=true`
+            `${this.marketEndpoints.coingecko.base}${this.marketEndpoints.coingecko.coin}/${symbol}?x_cg_demo_api_key=${process.env.CG_API_KEY}&tickers=true&market_data=true&community_data=true&developer_data=true&sparkline=true`
           );
           const data = await response.json();
 
@@ -130,7 +106,7 @@ class CryptoTradingBot {
       getMarketTrends: async () => {
         try {
           const response = await fetch(
-            `${this.marketEndpoints.trends}?x_cg_demo_api_key=${process.env.CG_API_KEY}`
+            `${this.marketEndpoints.coingecko.base}${this.marketEndpoints.coingecko.trends}?x_cg_demo_api_key=${process.env.CG_API_KEY}`
           );
           const data = await response.json();
           return data;
@@ -143,7 +119,7 @@ class CryptoTradingBot {
       getGlobalMetrics: async () => {
         try {
           const response = await fetch(
-            `${this.marketEndpoints.global}?x_cg_demo_api_key=${process.env.CG_API_KEY}`
+            `${this.marketEndpoints.coingecko.base}${this.marketEndpoints.coingecko.global}?x_cg_demo_api_key=${process.env.CG_API_KEY}`
           );
           const data = await response.json();
           return data;
@@ -163,7 +139,7 @@ class CryptoTradingBot {
         .eq("user_id", msg.from.id)
         .single();
 
-      if (!wallet) {
+      if (!wallet || !wallet.address) {
         const account = this.web3.eth.accounts.create();
         const { data, error } = await this.supabase
           .from("wallets")
@@ -184,49 +160,26 @@ class CryptoTradingBot {
         wallet = data;
       }
 
-      this.exchange = new ccxt.hyperliquid({
-        privateKey: wallet.private_key,
-        walletAddress: wallet.address,
-      });
-      this.exchange.setSandboxMode(true); 
-
       // const balance = await this.web3.eth.getBalance(wallet.address);
       // const balanceInEth = this.web3.utils.fromWei(balance, "ether");
       // let balanceMessage = `CBTC: ${balanceInEth}\n`;
-      let balanceMessage = `CBTC: ${wallet.balance}\n`;
+      let balanceMessage = `BNB: ${wallet.balance}\n`;
 
-      let welcomeMessage = `Welcome to Citrea Trading & Memecoin Assistant! 🚀\n\n`;
-      welcomeMessage += `Your Citrea Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>\n\n`;
+      let welcomeMessage = `Welcome to CoinMaster! 🚀\n\n`;
+      welcomeMessage += `Your Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>\n\n`;
       welcomeMessage += `Balances:\n${balanceMessage}\n`;
       welcomeMessage += `I can help you with:
 
 📊 Trading Analysis & Strategies
 💹 Market Analysis
 
-Try these commands:
-• /price - Get Trending token current price
-  Example: /price
-
-• /value [token] - Get Price of a specific token
-  Example: /value HYPE/USDC
-  Refer: <a href="https://app.hyperliquid.xyz/trade/PURR/USDC">Hyperliquid</a>
-
-• /order [token] [buy/sell] [amount] - Place an order
-  Example: /order BTC/USDC:USDC buy 0.1
-  Refer: <a href="https://app.hyperliquid.xyz/trade/PURR/USDC">Hyperliquid</a>
-
-• /trade [token_name] - Trade Decision Making
-  Example: /trade ethereum
-  Refer: <a href="https://docs.coingecko.com/v3.0.1/reference/coins-list">Coingecko coin list</a>
-
-• /bridge - Bridge Token
-
 Type /help for more features!`;
 
       const keyboard = {
         inline_keyboard: [
           [
-            { text: "📊 Price Analysis", callback_data: "menu_price" },
+            { text: "🛒 Buy", callback_data: "buy_menu" },
+            { text: "🤑 Sell", callback_data: "sell_menu" },
             { text: "💰 Check Balance", callback_data: "check_balance" },
           ],
         ],
@@ -238,107 +191,34 @@ Type /help for more features!`;
       });
     });
 
-    this.bot.onText(/\/bridge/, async (msg) => {
-      let { data: wallet } = await this.supabase
-        .from("wallets")
-        .select("*")
-        .eq("user_id", msg.from.id)
-        .single();
-      const newBalance = wallet.balance + 1;
-
-      this.updateBalance(msg.from.id, newBalance);
-
-      let balanceMessage = `CBTC: ${newBalance}\n`;
-
-      let bridgeMessage = `Bridge Successfully 🤝🔥\n\n`;
-      bridgeMessage += balanceMessage;
-
-      this.bot.sendMessage(msg.chat.id, bridgeMessage, {
-        parse_mode: "HTML",
-      });
+    this.bot.onText(/\/help/, async (msg, match) => {
+      // Try these commands:
+      // • /hot - Get Popular token current price
+      //   Example: /hot
+      
+      // • /price [token_address] - Get Price of a token
+      //   Example: /price 
+      
+      // • /order [token_address] - Place an order
+      //   Example: /order 0xbfef0d8d73f3d8c11ae7b8d5a25814fc4cece5e04b913e03bccf22eebddd35f0
+      
+      // • /trade [token_name] - Trade Decision Making
+      //   Example: /trade bitcoin
+      //   Refer: <a href="https://docs.coingecko.com/v3.0.1/reference/coins-list">Coingecko coin list</a>
+      
+    });
+    this.bot.onText(/\/hot/, async (msg, match) => {
+      await this.sendPriceMenu(msg.chat.id);
     });
 
-    this.bot.onText(/\/value (.+)/, async (msg, match) => {
-      const symbol = match[1].toUpperCase();
-
-      if (symbol == "ALL") {
-        const ticker = await this.exchange.fetchTickers();
-        for (const symbol in ticker) {
-          const message = `${symbol}\nPrice: $${ticker[symbol].last}\nVolume: ${ticker[symbol].quoteVolume}\nMax Leverage:${ticker[symbol].info.maxLeverage}\nFunding: ${ticker[symbol].info.funding}\nOpen Interest: ${ticker[symbol].info.openInterest}`;
-          await this.bot.sendMessage(msg.chat.id, message);
-        }
-      } else {
-        const ticker = await this.exchange.fetchTickers([symbol]);
-        const message = `${symbol}\nPrice: $${ticker[symbol].last}\nVolume: ${ticker[symbol].quoteVolume}\nMax Leverage:${ticker[symbol].info.maxLeverage}\nFunding: ${ticker[symbol].info.funding}\nOpen Interest: ${ticker[symbol].info.openInterest}`;
-        await this.bot.sendMessage(msg.chat.id, message);
-      }
+    this.bot.onText(/\/price (.+)/, async (msg, match) => {
+      const tokenAddress = match[1];
+      await this.handlePrice(msg.chat.id, tokenAddress);
     });
 
-    this.bot.onText(/\/order (.+) (.+) (.+)/, async (msg, match) => {
-      let { data: wallet } = await this.supabase
-      .from("wallets")
-      .select("*")
-      .eq("user_id", msg.from.id)
-      .single();
-
-    if (!wallet) {
-      const account = this.web3.eth.accounts.create();
-      const { data, error } = await this.supabase
-        .from("wallets")
-        .insert([
-          {
-            user_id: msg.from.id,
-            address: account.address,
-            private_key: account.privateKey,
-          },
-        ])
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Error creating wallet:", error);
-        return;
-      }
-      wallet = data;
-    }
-
-    this.exchange = new ccxt.hyperliquid({
-      privateKey: wallet.private_key,
-      walletAddress: wallet.address,
-    });
-    this.exchange.setSandboxMode(true); 
-
-      const [_, symbol, side, amount] = match;
-      const response = await this.createOrder(
-        symbol.toUpperCase(),
-        "market",
-        side.toLowerCase(),
-        parseFloat(amount)
-      );
-
-      await this.bot.sendMessage(
-        msg.chat.id,
-        response.success
-          ? `Order executed:\nSymbol: ${symbol}\nSide: ${side}\nAmount: ${amount}`
-          : `Order failed: ${response.error}`
-      );
-    });
-
-    this.bot.onText(/\/analyze (.+)/, async (msg, match) => {
-      const symbol = match[1].toUpperCase() + "";
-      const analysis = await this.analyzeMarket(symbol);
-
-      if (!analysis) {
-        await this.bot.sendMessage(msg.chat.id, "Error analyzing market");
-        return;
-      }
-
-      await this.bot.sendMessage(
-        msg.chat.id,
-        `${symbol} Analysis:\n• Action: ${analysis.action}\n• Confidence: ${(
-          analysis.confidence * 100
-        ).toFixed(1)}%\n\nReasoning:\n${analysis.reasoning.join("\n")}`
-      );
+    this.bot.onText(/\/order (.+)/, async (msg, match) => {
+      const tokenAddress = match[1];
+      await this.handleOrder(msg.chat.id, tokenAddress);
     });
 
     this.bot.onText(/\/trade (.+)/, async (msg, match) => {
@@ -381,9 +261,6 @@ Trading Analysis for ${symbol}:
 • Confidence: ${(analysis.confidence * 100).toFixed(1)}%
 • Risk Level: ${analysis.risk}
 • Reasoning:\n${analysis.reasoning}
-
-Your Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>
-Balance: ${wallet.balance} CBTC
 `;
 
       const tradeKeyboard = {
@@ -393,8 +270,7 @@ Balance: ${wallet.balance} CBTC
             { text: "🔴 Sell", callback_data: `trade_sell_${symbol}` },
           ],
           [
-            { text: "💰 Check Balances", callback_data: "trade_balance" },
-            { text: "📊 Order History", callback_data: "trade_history" },
+            { text: "💰 Check Balance", callback_data: "trade_balance" },
           ],
         ],
       };
@@ -405,7 +281,122 @@ Balance: ${wallet.balance} CBTC
     });
 
     this.bot.on("callback_query", this.handleCallbackQuery.bind(this));
-    this.setupPriceHandler();
+  }
+
+  async handlePrice(chatId, tokenAddress) {
+    try {
+      // Fetch token info from GeckoTerminal
+      const onchainData = await this.getOnchainMetrics(tokenAddress);
+
+      // Get price chart image from GeckoTerminal 
+      const chartUrl = `https://www.coingecko.com/en/coins/${onchainData.name.toLowerCase()}`;
+      
+      // Get BSCScan preview
+      const bscscanUrl = `${this.scannerUrl}token/${tokenAddress}`;
+
+      const message = `
+      🪙 <b>${onchainData.name} (${onchainData.symbol})</b>
+
+💰 Price: $${onchainData.price}
+📊 Change: 
+• 5m: ${onchainData.priceChange.m5}%
+• 1h: ${onchainData.priceChange.h1}%
+• 6h: ${onchainData.priceChange.h6}%
+• 24h: ${onchainData.priceChange.h24}%
+💎 24h Volume: $${(onchainData.volume24h).toLocaleString()}
+👥 Holders: ${""}
+🔄 24h Transactions: 
+• Buys: ${onchainData.transactions.h24.buys} (${onchainData.transactions.h24.buyers} buyers)
+• Sells: ${onchainData.transactions.h24.sells} (${onchainData.transactions.h24.sellers} sellers)
+
+🏊‍♂️ Top Liquidity Pool:
+• Pool: ${onchainData.pool.name}
+• Address: <code>${onchainData.pool.address}</code>
+      `;
+
+      const keyboard = {
+        inline_keyboard: [
+          [
+        { text: "📈 Price Chart", url: chartUrl },
+        { text: "🔍 BSCScan", url: bscscanUrl }
+          ],
+          [
+        { text: "🛒 Buy", callback_data: `buy_token_${tokenAddress}` },
+        { text: "💰 Analysis", callback_data: `sell_token_${tokenAddress}` },
+          ],
+        ],
+      };
+
+      // Send message with chart image
+      await this.bot.sendPhoto(chatId, onchainData.image_url);
+      await this.bot.sendMessage(chatId, message, { 
+        parse_mode: 'HTML',
+        reply_markup: keyboard 
+      });
+    } catch (error) {
+      console.error("Price fetch error:", error);
+      await this.bot.sendMessage(chatId, "Error fetching token information");
+    }
+  }
+
+  async handleOrder(chatId, tokenAddress) {
+    try {
+      // Get token data from GeckoTerminal
+      const tokenData = await axios.get(
+        `${this.marketEndpoints.gecko_terminal.base}/info/${tokenAddress}`
+      );
+
+      // Get DODO quote
+      const quoteData = await axios.get(
+        `${this.marketEndpoints.dodoex.base}/quote`,
+        {
+          params: {
+            fromToken: tokenAddress,
+            toToken: "BNB",
+            amount: "1000000000000000000", // 1 token
+          },
+        }
+      );
+
+      const message = `
+  Order Info for ${tokenData.data.name}:
+  Current Price: $${tokenData.data.price_usd}
+  Slippage: ${quoteData.data.priceImpact}%
+  Gas Price: ${quoteData.data.gasPrice} GWEI
+  
+  Select action:
+  `;
+
+      const keyboard = {
+        inline_keyboard: [
+          [
+            {
+              text: "🛒 Market Buy",
+              callback_data: `market_buy_${tokenAddress}`,
+            },
+            {
+              text: "💰 Market Sell",
+              callback_data: `market_sell_${tokenAddress}`,
+            },
+          ],
+          [
+            {
+              text: "📊 Limit Buy",
+              callback_data: `limit_buy_${tokenAddress}`,
+            },
+            {
+              text: "📈 Limit Sell",
+              callback_data: `limit_sell_${tokenAddress}`,
+            },
+          ],
+        ],
+      };
+
+      await this.bot.sendMessage(chatId, message, { reply_markup: keyboard });
+    } catch (error) {
+      console.error("Order info error:", error);
+      await this.bot.sendMessage(chatId, "Error fetching order information");
+    }
   }
 
   analyzeTechnicalSignals(coinData) {
@@ -547,6 +538,7 @@ Balance: ${wallet.balance} CBTC
 
   async analyzeTradingOpportunity(symbol, userId) {
     try {
+      // Fetch basic coin data and market conditions
       const [coinData, trends, globalMetrics] = await Promise.all([
         this.indicators.getCoinSentiment(symbol.toLowerCase()),
         this.indicators.getMarketTrends(),
@@ -557,6 +549,13 @@ Balance: ${wallet.balance} CBTC
         throw new Error("Unable to fetch coin data");
       }
 
+      console.log(coinData.contract_address);
+      // Fetch onchain metrics from GeckoTerminal
+      const onchainMetrics = await this.getOnchainMetrics(
+        coinData.contract_address
+      );
+
+      // Combine all signals including onchain data
       const signals = {
         technical: this.analyzeTechnicalSignals(coinData),
         fundamentals: this.analyzeFundamentals(coinData),
@@ -564,16 +563,16 @@ Balance: ${wallet.balance} CBTC
         trend: this.analyzeTrendStrength(trends, symbol),
         market: this.analyzeMarketConditions(globalMetrics),
         volume: this.analyzeVolumeProfile(coinData),
+        onchain: this.analyzeOnchainMetrics(onchainMetrics), // New analysis
       };
 
-      // Get user's risk profile
+      // Get user's risk profile and LLM analysis
       const userRiskProfile = await this.getUserRiskProfile(userId);
-
-      // Use LLM for advanced analysis
       const llmAnalysis = await this.getLLMAnalysis(
         coinData,
         signals,
-        userRiskProfile
+        userRiskProfile,
+        onchainMetrics // Pass onchain data to LLM
       );
 
       const weightedScore = this.calculateWeightedScore(
@@ -582,7 +581,7 @@ Balance: ${wallet.balance} CBTC
       );
       const recommendation = this.getRecommendation(weightedScore, llmAnalysis);
 
-      // Update market patterns memory
+      // Update market patterns
       this.updateMarketPatterns(symbol, signals, recommendation);
 
       return {
@@ -591,12 +590,24 @@ Balance: ${wallet.balance} CBTC
         reasoning: this.generateDetailedReasoning(signals, llmAnalysis),
         risk: this.calculateRiskLevel(signals),
         metrics: {
+          // Basic metrics
           price: coinData?.market_data?.current_price?.usd ?? 0,
           priceChange24h:
             coinData?.market_data?.price_change_percentage_24h ?? 0,
           volume24h: coinData?.market_data?.total_volume?.usd ?? 0,
           marketCap: coinData?.market_data?.market_cap?.usd ?? 0,
           marketCapRank: coinData.market_cap_rank,
+          // Onchain metrics
+          onchain: {
+            name: onchainMetrics.name,
+            symbol: onchainMetrics.symbol,
+            currentPrice: onchainMetrics.price,
+            volume24h: onchainMetrics.volume24h,
+            liquidityUSD: onchainMetrics.liquidity,
+            holders: onchainMetrics.holders,
+            priceChange: onchainMetrics.priceChange,
+            transactions24h: onchainMetrics.transactions,
+          },
         },
       };
     } catch (error) {
@@ -608,6 +619,67 @@ Balance: ${wallet.balance} CBTC
         risk: "UNKNOWN",
       };
     }
+  }
+
+  // Add new method to fetch onchain metrics
+  async getOnchainMetrics(tokenAddress) {
+    try {
+      const response = await axios.get(
+        `${this.marketEndpoints.gecko_terminal.base}/networks/bsc/tokens/${tokenAddress}?include=top_pools`
+      );
+
+      const { data, included } = response.data;
+      const topPool = included[0];
+
+      return {
+        image_url:  data.attributes.image_url ?? "",
+        name: data.attributes.name,
+        symbol: data.attributes.symbol,
+        price: data.attributes.price_usd,
+        volume24h: data.attributes.volume_usd.h24,
+        liquidity: data.attributes.liquidity_usd,
+        priceChange: topPool.attributes.price_change_percentage,
+        transactions: topPool.attributes.transactions,
+        pool: {
+          address: topPool.attributes.address,
+          name: topPool.attributes.name,
+        }
+      };
+    } catch (error) {
+      console.error("Error fetching onchain metrics:", error);
+      return {
+        name: "",
+        symbol: "",
+        price: 0,
+        volume24h: 0,
+        liquidity: 0,
+        holders: 0,
+        priceChange: 0,
+        transactions: 0,
+      };
+    }
+  }
+
+  // Add new method to analyze onchain metrics
+  analyzeOnchainMetrics(metrics) {
+    if (!metrics) return { score: 0 };
+
+    const liquidityScore = Math.min(metrics.liquidity / 1000000, 1); // Normalize to 0-1
+    const holdersScore = Math.min(metrics.holders / 10000, 1); // Normalize to 0-1
+    const transactionScore = Math.min(metrics.transactions / 1000, 1); // Normalize to 0-1
+
+    const volumeToLiquidity = metrics.volume24h / (metrics.liquidity || 1);
+    const healthScore =
+      volumeToLiquidity > 0.5 ? 0.8 : volumeToLiquidity > 0.1 ? 0.5 : 0.2;
+
+    return {
+      liquidity: liquidityScore,
+      holders: holdersScore,
+      transactions: transactionScore,
+      health: healthScore,
+      score:
+        (liquidityScore + holdersScore + transactionScore + healthScore) / 4,
+    };
   }
 
   async createOrder(symbol, type, side, amount, price = null, params = {}) {
@@ -689,67 +761,100 @@ Balance: ${wallet.balance} CBTC
     }
   }
 
-  async closePosition(symbol) {
+  async getLLMAnalysis(coinData, signals, onchainMetrics) {
     try {
-      const position = await this.exchange.fetchPosition(symbol);
-      if (!position || position.contracts === 0) {
-        return { success: false, error: "No open position" };
-      }
-
-      const side = position.side === "long" ? "sell" : "buy";
-      const amount = Math.abs(position.contracts);
-
-      return await this.createOrder(symbol, "market", side, amount, null, {
-        reduceOnly: true,
-      });
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
+      // Format metrics and signals into structured data for analysis
+      const analysisData = {
+        price_metrics: {
+          current_price: coinData?.market_data?.current_price?.usd,
+          price_change_24h: coinData?.market_data?.price_change_percentage_24h,
+          market_cap: coinData?.market_data?.market_cap?.usd,
+          volume_24h: coinData?.market_data?.total_volume?.usd,
+        },
+        technical_indicators: {
+          rsi: signals.technical?.rsi || 0,
+          momentum: signals.technical?.momentum || 0,
+          volatility: signals.technical?.volatility || 0,
+        },
+        sentiment_metrics: {
+          community_score: signals.sentiment?.community || 0,
+          developer_score: signals.sentiment?.developer || 0,
+          public_interest: signals.sentiment?.public || 0,
+        },
+        market_conditions: {
+          trend_strength: signals.trend?.overallScore || 0,
+          market_health: signals.market?.health || 0,
+          liquidity: signals.market?.liquidity || 0,
+        },
+        volume_profile: signals.volume || 0,
+        onchain_metrics: {
+          name: onchainMetrics.name,
+          symbol: onchainMetrics.symbol,
+          current_price: onchainMetrics.price,
+          volume_24h: onchainMetrics.volume24h,
+          liquidity: onchainMetrics.liquidity,
+          holders_count: onchainMetrics.holders,
+          price_change: onchainMetrics.priceChange,
+          transactions_24h: onchainMetrics.transactions,
+        },
       };
-    }
-  }
-
-  async getLLMAnalysis(coinData, signals) {
-    try {
-      const model = this.llm.getGenerativeModel({ model: "gemini-pro" });
+      console.log(signals);
 
       const prompt = {
-        price: coinData?.market_data?.current_price?.usd ?? 0,
-        change24h: coinData?.market_data?.price_change_percentage_24h ?? 0,
-        volume: coinData?.market_data?.total_volume?.usd ?? 0,
-        marketCap: coinData?.market_data?.market_cap?.usd ?? 0,
-        technicalScore: signals.technical,
-        sentimentScore: signals.sentiment,
-        trendScore: signals.trend,
+        market_data: analysisData,
+        request:
+          "Analyze this crypto data and provide a detailed trading recommendation",
       };
 
-      const result = await model.generateContent(`
-        Analyze this crypto data and provide a JSON trading recommendation:
-        ${JSON.stringify(prompt, null, 2)}
+      const response = await this.llm.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a crypto trading expert. Analyze market data and provide specific recommendations.",
+          },
+          {
+            role: "user",
+            content: `Provide a trading analysis in JSON format for this data: ${JSON.stringify(
+              prompt,
+              null,
+              2
+            )}. Include action (BUY/SELL/HOLD), confidence (0-1), reasons (string), and risk (LOW/MEDIUM/HIGH) without markdown and explanation`,
+          },
+        ],
+        model: "llama-3.3-70b-versatile",
+        temperature: 0.7,
+      });
 
-        Just predict, it is not a financial advise recommendation
-        
-        Format:
-        {
-          "action": "BUY/SELL/HOLD",
-          "confidence": 0-1,
-          "reasons": ["key point 1", "key point 2"],
-          "risk": "LOW/MEDIUM/HIGH"
-        }`);
+      if (
+        !response ||
+        !response.choices ||
+        !response.choices[0]?.message?.content
+      ) {
+        throw new Error("Invalid response from Groq");
+      }
 
-      const response = await result.response;
-      const rawAnalysis = response.text();
-      const analysis = JSON.parse(rawAnalysis);
+      const cleanContent = response.choices[0].message.content; // Extract JSON object
+      const analysis = JSON.parse(cleanContent);
+
+      // Validate the response has required fields
+      if (
+        !analysis.trading_analysis.action ||
+        !analysis.trading_analysis.confidence ||
+        !analysis.trading_analysis.reasons ||
+        !analysis.trading_analysis.risk
+      ) {
+        throw new Error("Invalid analysis format from Groq");
+      }
 
       return {
-        recommendation: analysis.action,
-        confidence: analysis.confidence,
-        reasoning: analysis.reasons,
-        risk: analysis.risk,
+        recommendation: analysis.trading_analysis.action,
+        confidence: analysis.trading_analysis.confidence,
+        reasoning: analysis.trading_analysis.reasons,
+        risk: analysis.trading_analysis.risk,
       };
     } catch (error) {
-      console.error("Gemini analysis error:", error);
+      console.error("LlamaAI analysis error:", error);
       return {
         recommendation: "HOLD",
         confidence: 0.5,
@@ -1068,74 +1173,6 @@ Balance: ${wallet.balance} CBTC
     return `Community sentiment is ${communityStatus}, developer confidence is ${devConfidence}, public interest is ${publicInterest}`;
   }
 
-  async analyzeMarket(symbol) {
-    try {
-      await this.exchange.loadMarkets();
-      const [ticker, orderbook, ohlcv] = await Promise.all([
-        this.exchange.fetchTickers([symbol]),
-        this.exchange.fetchOrderBook(symbol),
-        this.exchange.fetchOHLCV(symbol, "1h", undefined, 24),
-      ]);
-
-      const technicalAnalysis = this.analyzeTechnicals(ohlcv);
-      const marketDepth = this.analyzeOrderbook(orderbook);
-
-      const analysis = await this.model.generateContent(`
-        Analyze market data:
-        Price: ${ticker.last}
-        24h Change: ${ticker.percentage}%
-        Volume: ${ticker.baseVolume}
-        Technical Analysis: ${JSON.stringify(technicalAnalysis)}
-        Market Depth: ${JSON.stringify(marketDepth)}
-        
-        Provide trading recommendation as JSON:
-        {
-          "action": "BUY/SELL/HOLD",
-          "confidence": 0-1,
-          "reasoning": ["reason1", "reason2"]
-        }`);
-
-      return JSON.parse(analysis.response.text());
-    } catch (error) {
-      console.error("Analysis error:", error);
-      return null;
-    }
-  }
-
-  analyzeTechnicals(ohlcv) {
-    const closes = ohlcv.map((candle) => candle[4]);
-    const volumes = ohlcv.map((candle) => candle[5]);
-
-    return {
-      price_trend: this.calculateTrend(closes),
-      volume_trend: this.calculateTrend(volumes),
-      volatility: this.calculateVolatilityNew(closes),
-    };
-  }
-
-  analyzeOrderbook(orderbook) {
-    const bidVolume = orderbook.bids.reduce((sum, [_, vol]) => sum + vol, 0);
-    const askVolume = orderbook.asks.reduce((sum, [_, vol]) => sum + vol, 0);
-
-    return {
-      bid_ask_ratio: bidVolume / askVolume,
-      spread:
-        (orderbook.asks[0][0] - orderbook.bids[0][0]) / orderbook.bids[0][0],
-    };
-  }
-
-  calculateTrend(values) {
-    const change = (values[values.length - 1] - values[0]) / values[0];
-    return change > 0.02 ? "BULLISH" : change < -0.02 ? "BEARISH" : "NEUTRAL";
-  }
-
-  calculateVolatilityNew(values) {
-    const mean = values.reduce((a, b) => a + b) / values.length;
-    const variance =
-      values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
-    return Math.sqrt(variance) / mean;
-  }
-
   updateMarketPatterns(symbol, signals, recommendation) {
     const pattern = {
       timestamp: Date.now(),
@@ -1179,61 +1216,76 @@ Balance: ${wallet.balance} CBTC
   }
 
   async handleTradeCallbacks(query) {
-    const chatId = query.message.chat.id;
-    const [action, type, symbol] = query.data.split("_");
+    const [action, type, tokenAddress] = query.data.split("_");
 
-    if (type === "buy" || type === "sell") {
-      const { data: wallet } = await this.supabase
-        .from("wallets")
-        .select("*")
-        .eq("user_id", query.from.id)
-        .single();
+    if (action === "market" || action === "limit") {
+      try {
+        const { data: wallet } = await this.supabase
+          .from("wallets")
+          .select("*")
+          .eq("user_id", query.from.id)
+          .single();
 
-      const balance = await this.web3.eth.getBalance(wallet.address);
-      const balanceInEth = this.web3.utils.fromWei(balance, "ether");
-      let balanceMessage = `CBTC: ${balanceInEth}\n`;
+        // Get quote from DODO
+        const quote = await axios.post(
+          `${this.marketEndpoints.dodoex.base}/quote`,
+          {
+            fromToken: type === "buy" ? "BNB" : tokenAddress,
+            toToken: type === "buy" ? tokenAddress : "BNB",
+            fromAddress: wallet.address,
+          }
+        );
 
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: "25%", callback_data: `amount_${type}_25_${symbol}` },
-            { text: "50%", callback_data: `amount_${type}_50_${symbol}` },
-            { text: "75%", callback_data: `amount_${type}_75_${symbol}` },
-            { text: "100%", callback_data: `amount_${type}_100_${symbol}` },
+        const keyboard = {
+          inline_keyboard: [
+            [
+              {
+                text: "25%",
+                callback_data: `amount_${type}_25_${tokenAddress}`,
+              },
+              {
+                text: "50%",
+                callback_data: `amount_${type}_50_${tokenAddress}`,
+              },
+              {
+                text: "75%",
+                callback_data: `amount_${type}_75_${tokenAddress}`,
+              },
+              {
+                text: "100%",
+                callback_data: `amount_${type}_100_${tokenAddress}`,
+              },
+            ],
+            [
+              {
+                text: "Custom Amount",
+                callback_data: `amount_${type}_custom_${tokenAddress}`,
+              },
+            ],
+            [{ text: "❌ Cancel", callback_data: "cancel_trade" }],
           ],
-          [
-            {
-              text: "Custom Amount",
-              callback_data: `amount_${type}_custom_${symbol}`,
-            },
-          ],
-        ],
-      };
+        };
 
-      await this.bot.sendMessage(
-        chatId,
-        `Select amount to ${type} ${symbol}:\n\nAvailable Balances:\n${balanceMessage}`,
-        {
-          reply_markup: keyboard,
-        }
-      );
+        await this.bot.sendMessage(
+          query.message.chat.id,
+          `Select amount to ${type}:\nPrice Impact: ${quote.data.priceImpact}%`,
+          { reply_markup: keyboard }
+        );
+      } catch (error) {
+        console.error("Trade setup error:", error);
+        await this.bot.sendMessage(
+          query.message.chat.id,
+          "Error setting up trade"
+        );
+      }
     }
-
-    await this.bot.answerCallbackQuery(query.id);
-  }
-
-  setupPriceHandler() {
-    this.bot.onText(/\/price/, async (msg) => {
-      // Trigger the sendPriceMenu function directly
-      await this.sendPriceMenu(msg.chat.id);
-    });
   }
 
   // Update sendPriceMenu to use real price data
   async sendPriceMenu(chatId) {
     try {
       const response = await fetch(
-        `${this.marketEndpoints.price}?x_cg_demo_api_key=` +
+        `${this.marketEndpoints.coingecko.base}${this.marketEndpoints.coingecko.price}?x_cg_demo_api_key=` +
           process.env.CG_API_KEY +
           `&ids=bitcoin,ethereum,binancecoin&vs_currencies=usd`
       );
