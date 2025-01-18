@@ -267,7 +267,7 @@ Need more help? Contact @admin`;
 
   async sendAnalysis(chatId, tokenAddress, userId) {
     const analysis = await this.analyzeTradingOpportunity(tokenAddress, userId);
-    const technical = analysis.analysis.technicalSignals;
+    const technical = this.describeTechnicalSignals(analysis.analysis.technicalSignals);
 
     const tradeMessage = `
 ${technical}
@@ -288,7 +288,7 @@ ${analysis.analysis}
       inline_keyboard: [
         [
           { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
-          { text: "💰 Analysis", callback_data: `trade_sell_${tokenAddress}` },
+          { text: "🔎 Analysis", callback_data: `analysis_${tokenAddress}` },
         ],
         [{ text: "💰 Check Balance", callback_data: "check_balance" }],
       ],
@@ -498,7 +498,7 @@ ${analysis.analysis}
           [
             { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
             {
-              text: "💰 Analysis",
+              text: "🔎 Analysis",
               callback_data: `analysis_${tokenAddress}`,
             },
           ],
