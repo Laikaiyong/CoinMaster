@@ -762,6 +762,7 @@ ${analysis.analysis}
       );
 
       return {
+        signals: signals,
         analysis: llmAnalysis,
         reasoning: this.generateDetailedReasoning(signals, llmAnalysis),
         risk: this.calculateRiskLevel(signals),
@@ -1386,10 +1387,10 @@ ${analysis.analysis}
       return;
     }
 
-    // if (query.data === "check_balance") {
-    //   await this.handleBalanceCheck(query);
-    //   return;
-    // }
+    if (query.data === "check_balance") {
+      await this.handleBalanceCheck(query);
+      return;
+    }
 
     if (query.data.startsWith("analysis_")) {
       const [action, tokenAddress] = query.data.split("_");
@@ -1403,12 +1404,12 @@ Trading Analysis for ${analysis.metrics.name}:
 
 🔍 Technical Analysis:
 • RSI: ${
-  analysis.analysis.technicalSignals
-    ? analysis.analysis.technicalSignals.value
+  analysis.signals.technical.rsi
+    ? analysis.signals.technical.rsi
     : "N/A"
 } (${
-  analysis.analysis.technicalSignals
-    ? analysis.analysis.technicalSignals.interpretation
+  analysis.signals.technical.momentum
+    ? analysis.signals.technical.momentum
     : "N/A"
 })
 • Volatility: ${
