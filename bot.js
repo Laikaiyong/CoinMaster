@@ -188,6 +188,21 @@ Type /help for more features!`;
       });
     });
 
+    this.bot.onText(/\/buy/, async (msg) => {
+      const sentMessage = await this.bot.sendMessage(
+        msg.chat.id,
+        'Enter the token contract address you want to buy (Eg: 0x...dac):',
+        { reply_markup: { force_reply: true } }
+      );
+    
+      this.bot.onReplyToMessage(sentMessage.chat.id, sentMessage.message_id, async (reply) => {
+        const tokenAddress = reply.text;
+    
+        await this.handlePrice(reply.chat.id, tokenAddress);
+      });
+    });
+    
+
     this.bot.onText(/\/help/, async (msg, match) => {
       const helpMessage = `
 🤖 *CoinMaster Bot Commands*
@@ -455,9 +470,9 @@ ${analysis.analysis}
       // Fetch token info from GeckoTerminal
       const onchainData = await this.getOnchainMetrics(tokenAddress);
 
-      // Get price chart image from GeckoTerminal
-      const chartUrl = `https://www.coingecko.com/en/coins/${onchainData.name.toLowerCase()}`;
-
+      // Get price chart image from GeckoTerminal 
+      const chartUrl = `${`https://www.geckoterminal.com/bsc/tokens/${tokenAddress}`}`;
+      
       // Get BSCScan preview
       const bscscanUrl = `${this.scannerUrl}token/${tokenAddress}`;
 
@@ -1371,10 +1386,10 @@ ${analysis.analysis}
       return;
     }
 
-    if (query.data === "check_balance") {
-      await this.handleBalanceCheck(query);
-      return;
-    }
+    // if (query.data === "check_balance") {
+    //   await this.handleBalanceCheck(query);
+    //   return;
+    // }
 
     if (query.data.startsWith("analysis_")) {
       const [action, tokenAddress] = query.data.split("_");
