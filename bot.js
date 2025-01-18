@@ -191,17 +191,20 @@ Type /help for more features!`;
     this.bot.onText(/\/buy/, async (msg) => {
       const sentMessage = await this.bot.sendMessage(
         msg.chat.id,
-        'Enter the token contract address you want to buy (Eg: 0x...dac):',
+        "Enter the token contract address you want to buy (Eg: 0x...dac):",
         { reply_markup: { force_reply: true } }
       );
-    
-      this.bot.onReplyToMessage(sentMessage.chat.id, sentMessage.message_id, async (reply) => {
-        const tokenAddress = reply.text;
-    
-        await this.handlePrice(reply.chat.id, tokenAddress);
-      });
+
+      this.bot.onReplyToMessage(
+        sentMessage.chat.id,
+        sentMessage.message_id,
+        async (reply) => {
+          const tokenAddress = reply.text;
+
+          await this.handlePrice(reply.chat.id, tokenAddress);
+        }
+      );
     });
-    
 
     this.bot.onText(/\/help/, async (msg, match) => {
       const helpMessage = `
@@ -225,7 +228,7 @@ Need more help? Contact @admin`;
 
       await this.bot.sendMessage(msg.chat.id, helpMessage, {
         parse_mode: "Markdown",
-        disable_web_page_preview: true
+        disable_web_page_preview: true,
       });
     });
 
@@ -253,31 +256,21 @@ Need more help? Contact @admin`;
       await this.handleOrder(msg.chat.id, tokenAddress);
     });
 
+    // Usage in command handler
     this.bot.onText(/\/analysis (.+)/, async (msg, match) => {
       const tokenAddress = match[1];
-      const analysis = await this.analyzeTradingOpportunity(
-        tokenAddress,
-        msg.from.id
-      );
+      await this.sendAnalysis(msg.chat.id, tokenAddress, msg.from.id);
+    });
 
-      const tradeMessage = `
-Trading Analysis for ${analysis.metrics.name}:
+    this.bot.on("callback_query", this.handleCallbackQuery.bind(this));
+  }
 
-🔍 Technical Analysis:
-• RSI: ${
-        analysis.analysis.technicalSignals
-          ? analysis.analysis.technicalSignals.value
-          : "N/A"
-      } (${
-        analysis.analysis.technicalSignals
-          ? analysis.analysis.technicalSignals.interpretation
-          : "N/A"
-      })
-• Volatility: ${
-        analysis.analysis.volatility
-          ? analysis.analysis.volatility + "%"
-          : "N/A"
-      }
+  async sendAnalysis(chatId, tokenAddress, userId) {
+    const analysis = await this.analyzeTradingOpportunity(tokenAddress, userId);
+    const technical = analysis.analysis.technicalSignals;
+
+    const tradeMessage = `
+${technical}
 • Price Change: ${analysis.metrics.priceChange.h24}% (24h)
 
 📊 Market Metrics:
@@ -286,33 +279,29 @@ Trading Analysis for ${analysis.metrics.name}:
 • Market Cap: $${analysis.metrics.marketCap}
 `;
 
-      const analysisMessage = `
+    const analysisMessage = `
 🤖 AI Analysis:
 ${analysis.analysis}
-      `;
-      const tradeKeyboard = {
-        inline_keyboard: [
-          [
-            { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
-            {
-              text: "💰 Analysis",
-              callback_data: `trade_sell_${tokenAddress}`,
-            },
-          ],
-          [{ text: "💰 Check Balance", callback_data: "check_balance" }],
-        ],
-      };
+    `;
 
-      await this.bot.sendMessage(msg.chat.id, tradeMessage, {
-        parse_mode: "Markdown",
-      });
-      await this.bot.sendMessage(msg.chat.id, analysisMessage, {
-        parse_mode: "Markdown",
-        reply_markup: tradeKeyboard,
-      });
+    const tradeKeyboard = {
+      inline_keyboard: [
+        [
+          { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
+          { text: "💰 Analysis", callback_data: `trade_sell_${tokenAddress}` },
+        ],
+        [{ text: "💰 Check Balance", callback_data: "check_balance" }],
+      ],
+    };
+
+    await this.bot.sendMessage(chatId, tradeMessage, {
+      parse_mode: "Markdown",
     });
 
-    this.bot.on("callback_query", this.handleCallbackQuery.bind(this));
+    return this.bot.sendMessage(chatId, analysisMessage, {
+      parse_mode: "Markdown",
+      reply_markup: tradeKeyboard,
+    });
   }
 
   async sendTrending(chatId) {
@@ -470,9 +459,9 @@ ${analysis.analysis}
       // Fetch token info from GeckoTerminal
       const onchainData = await this.getOnchainMetrics(tokenAddress);
 
-      // Get price chart image from GeckoTerminal 
+      // Get price chart image from GeckoTerminal
       const chartUrl = `${`https://www.geckoterminal.com/bsc/tokens/${tokenAddress}`}`;
-      
+
       // Get BSCScan preview
       const bscscanUrl = `${this.scannerUrl}token/${tokenAddress}`;
 
@@ -1311,8 +1300,11 @@ ${analysis.analysis}
         : technical.volatility > 0.2
         ? "low"
         : "moderate";
+    return `📊 Technical Analysis:
 
-    return `RSI indicates ${rsiStatus} conditions, momentum is ${momentumTrend}, volatility is ${volatilityLevel}`;
+• RSI indicates ${rsiStatus} conditions
+• Momentum is showing ${momentumTrend} trend  
+• Volatility level is ${volatilityLevel}`;
   }
 
   describeFundamentals(fundamentals) {
@@ -1394,61 +1386,7 @@ ${analysis.analysis}
 
     if (query.data.startsWith("analysis_")) {
       const [action, tokenAddress] = query.data.split("_");
-      const analysis = await this.analyzeTradingOpportunity(
-        tokenAddress,
-        chatId
-      );
-
-      const tradeMessage = `
-Trading Analysis for ${analysis.metrics.name}:
-
-🔍 Technical Analysis:
-• RSI: ${
-  analysis.signals.technical.rsi
-    ? analysis.signals.technical.rsi
-    : "N/A"
-} (${
-  analysis.signals.technical.momentum
-    ? analysis.signals.technical.momentum
-    : "N/A"
-})
-• Volatility: ${
-  analysis.analysis.volatility
-    ? analysis.analysis.volatility + "%"
-    : "N/A"
-}
-• Price Change: ${analysis.metrics.priceChange.h24}% (24h)
-
-📊 Market Metrics:
-• Volume: $${analysis.metrics.volume24h}
-• Liquidity: $${analysis.metrics.liquidityUSD}
-• Market Cap: $${analysis.metrics.marketCap}
-      `;
-
-      const analysisMessage = `
-🤖 AI Analysis:
-${analysis.analysis}
-            `;
-      const tradeKeyboard = {
-        inline_keyboard: [
-          [
-            { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
-            {
-              text: "💰 Analysis",
-              callback_data: `trade_sell_${tokenAddress}`,
-            },
-          ],
-          [{ text: "💰 Check Balance", callback_data: "check_balance" }],
-        ],
-      };
-
-      await this.bot.sendMessage(chatId, tradeMessage, {
-        parse_mode: "Markdown",
-      });
-      await this.bot.sendMessage(chatId, analysisMessage, {
-        parse_mode: "Markdown",
-        reply_markup: tradeKeyboard,
-      });
+      await this.sendAnalysis(chatId, tokenAddress);
     }
   }
 
