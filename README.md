@@ -1,24 +1,47 @@
-# Crypto Trading Bot Documentation
+# Coinmaster Documentation
 
-## Overview
+## Overview 
 A sophisticated cryptocurrency trading bot built with Node.js that integrates with Telegram for user interaction. The bot provides trading analysis, market insights, and automated trading capabilities using various APIs and blockchain interactions.
 
-## Verified Smart Contracts on Block Explorer (Bridging Feature)
-- https://explorer.testnet.citrea.xyz/tx/0xcbd40b7a44c23a8a6eb58cde919588af69be33d147c9e32480c0215beef189ac
-- https://sepolia.arbiscan.io/tx/0xfc1451deabdd921a677a748ea15036310fc79919b6133d59f35bfd3279e2254b
+## Setup Steps
+1. Clone the repository
+```bash
+git clone https://github.com/yourusername/coinmaster.git
+cd coinmaster
+```
 
-## Agent Capabilities
-- Autonomous market analysis and trading decisions
-- Real-time response to market changes
-- Pattern recognition in price movements
-- Risk assessment and management
-- Multi-source data aggregation
-- Predictive analytics using AI
-- User preference learning and adaptation
-- Quality-focused trade selection with win-rate tracking
-- Transparent reasoning process for each trade decision
-- Adaptive interface based on user experience level
+2. Install dependencies
+```bash
+npm install
+```
 
+3. Configure environment variables
+```bash
+cp .env.example .env
+# Edit .env with your API keys and configurations
+```
+
+4. Start the bot
+```bash
+npm start
+```
+
+## Core Features
+- Real-time cryptocurrency price tracking and analysis
+- Sentiment analysis using multiple data sources
+- Technical analysis with various indicators
+- Integration with Telegram for user interface
+- Wallet management on BSC network
+- Market trend analysis and predictions using Groq
+- Trade execution via DODO DEX
+- Detailed price and liquidity analysis
+- User experience customization
+
+## Main Components
+
+#### Core Setup Methods
+- `setupCore()`: Initializes Web3, Telegram bot, and Supabase connections
+- `setupMemory()`: Creates memory maps for storing preferences and market data
 ## Agent Limitations
 - No guarantee of profitable trades
 - Limited to supported cryptocurrencies
