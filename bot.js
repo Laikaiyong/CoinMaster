@@ -34,6 +34,7 @@ class CryptoTradingBot {
 
     this.marketEndpoints = {
       coingecko: {
+        proBase: "https://pro-api.coingecko.com/api/v3",
         base: "https://api.coingecko.com/api/v3",
         price: "/simple/price",
         trends: "/search/trending",
@@ -70,63 +71,49 @@ class CryptoTradingBot {
 
   setupPerception() {
     this.indicators = {
-      getCoinSentiment: async (symbol) => {
-        try {
-          const response = await fetch(
-            `${this.marketEndpoints.coingecko.base}${this.marketEndpoints.coingecko.coin}/${symbol}?x_cg_demo_api_key=${process.env.CG_API_KEY}&tickers=true&market_data=true&community_data=true&developer_data=true&sparkline=true`
-          );
-          const data = await response.json();
+      getCoinSentiment: async (contractAddress) => {
+      try {
+        // First fetch the coin list to find the id
+        const coinListResponse = await fetch(
+        `${this.marketEndpoints.coingecko.base}/coins/list?include_platform=true&x_cg_demo_api_key=${process.env.CG_API_KEY}`
+        );
+        const coinList = await coinListResponse.json();
+        
+        // Find the coin with matching BSC contract address
+        const coin = coinList.find(coin => 
+        coin.platforms && 
+        coin.platforms['binance-smart-chain'] && 
+        coin.platforms['binance-smart-chain'].toLowerCase() === contractAddress.toLowerCase()
+        );
 
-          // Store historical sentiment
-          this.memory.sentimentHistory.set(
-            symbol,
-            [
-              ...(this.memory.sentimentHistory.get(symbol) || []),
-              {
-                timestamp: Date.now(),
-                data: {
-                  sentiment_votes_up: data?.sentiment_votes_up_percentage ?? 0,
-                  sentiment_votes_down:
-                    data?.sentiment_votes_down_percentage ?? 0,
-                  community_score: data?.community_data?.twitter_followers ?? 0,
-                  developer_score: data?.developer_data?.stars ?? 0,
-                  public_interest_score: data?.trust_score ?? 0,
-                },
-              },
-            ].slice(-100)
-          ); // Keep last 100 entries
-
-          return data;
-        } catch (error) {
-          console.error("Coin sentiment fetch error:", error);
-          return null;
+        if (!coin) {
+        console.error("Coin not found for contract address:", contractAddress);
+        return null;
         }
-      },
 
-      getMarketTrends: async () => {
-        try {
-          const response = await fetch(
-            `${this.marketEndpoints.coingecko.base}${this.marketEndpoints.coingecko.trends}?x_cg_demo_api_key=${process.env.CG_API_KEY}`
-          );
-          const data = await response.json();
-          return data;
-        } catch (error) {
-          console.error("Market trends fetch error:", error);
-          return { coins: [] };
-        }
+        // Fetch detailed coin data using the found coin id
+        const response = await fetch(
+        `${this.marketEndpoints.coingecko.base}${this.marketEndpoints.coingecko.coin}/${coin.id}?x_cg_demo_api_key=${process.env.CG_API_KEY}&tickers=true&market_data=true&community_data=true&developer_data=true&sparkline=true`
+        );
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error("Coin sentiment fetch error:", error);
+        return null;
+      }
       },
 
       getGlobalMetrics: async () => {
-        try {
-          const response = await fetch(
-            `${this.marketEndpoints.coingecko.base}${this.marketEndpoints.coingecko.global}?x_cg_demo_api_key=${process.env.CG_API_KEY}`
-          );
-          const data = await response.json();
-          return data;
-        } catch (error) {
-          console.error("Global metrics fetch error:", error);
-          return null;
-        }
+      try {
+        const response = await fetch(
+        "https://api.coingecko.com/api/v3/global/decentralized_finance_defi?x_cg_demo_api_key=${process.env.CG_API_KEY}"
+        );
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error("Global DeFi metrics fetch error:", error);
+        return null;
+      }
       },
     };
   }
@@ -180,7 +167,7 @@ Type /help for more features!`;
           [
             { text: "🛒 Buy", callback_data: "buy_menu" },
             { text: "🤑 Sell", callback_data: "sell_menu" },
-            { text: "💰 Check Balance", callback_data: "check_balance" },
+            { text: "💰 Check Balance", callback_data: "trade_balance" },
           ],
         ],
       };
@@ -195,23 +182,23 @@ Type /help for more features!`;
       // Try these commands:
       // • /hot - Get Popular token current price
       //   Example: /hot
-      
       // • /price [token_address] - Get Price of a token
-      //   Example: /price 
-      
+      //   Example: /price
       // • /order [token_address] - Place an order
       //   Example: /order 0xbfef0d8d73f3d8c11ae7b8d5a25814fc4cece5e04b913e03bccf22eebddd35f0
-      
       // • /trade [token_name] - Trade Decision Making
       //   Example: /trade bitcoin
       //   Refer: <a href="https://docs.coingecko.com/v3.0.1/reference/coins-list">Coingecko coin list</a>
-      
     });
-    this.bot.onText(/\/hot/, async (msg, match) => {
+    this.bot.onText(/\/general/, async (msg, match) => {
       await this.sendPriceMenu(msg.chat.id);
     });
 
-    this.bot.onText(/\/price (.+)/, async (msg, match) => {
+    this.bot.onText(/\/hot/, async (msg, match) => {
+      await this.sendTrending(msg.chat.id);
+    });
+
+    this.bot.onText(/\/trade (.+)/, async (msg, match) => {
       const tokenAddress = match[1];
       await this.handlePrice(msg.chat.id, tokenAddress);
     });
@@ -221,61 +208,49 @@ Type /help for more features!`;
       await this.handleOrder(msg.chat.id, tokenAddress);
     });
 
-    this.bot.onText(/\/trade (.+)/, async (msg, match) => {
-      const symbol = match[1].toUpperCase();
+    this.bot.onText(/\/analysis (.+)/, async (msg, match) => {
+      const tokenAddress = match[1];
       const analysis = await this.analyzeTradingOpportunity(
-        symbol,
+        tokenAddress,
         msg.from.id
       );
 
-      let { data: wallet } = await this.supabase
-        .from("wallets")
-        .select("*")
-        .eq("user_id", msg.from.id)
-        .single();
-
-      if (!wallet) {
-        const account = this.web3.eth.accounts.create();
-        const { data, error } = await this.supabase
-          .from("wallets")
-          .insert([
-            {
-              user_id: msg.from.id,
-              address: account.address,
-              private_key: account.privateKey,
-            },
-          ])
-          .select()
-          .single();
-
-        if (error) {
-          console.error("Error creating wallet:", error);
-          return;
-        }
-        wallet = data;
-      }
-
       const tradeMessage = `
-Trading Analysis for ${symbol}:
-• Recommendation: ${analysis.recommendation}
-• Confidence: ${(analysis.confidence * 100).toFixed(1)}%
-• Risk Level: ${analysis.risk}
-• Reasoning:\n${analysis.reasoning}
+Trading Analysis for ${analysis.metrics.name}:
+
+🔍 Technical Analysis:
+• RSI: ${analysis.analysis.technicalSignals ? analysis.analysis.technicalSignals.value : 'N/A'} (${analysis.analysis.technicalSignals ? analysis.analysis.technicalSignals.interpretation : 'N/A'})
+• Volatility: ${analysis.analysis.volatility ? analysis.analysis.volatility + '%' : 'N/A'}
+• Price Change: ${analysis.metrics.priceChange.h24}% (24h)
+
+📊 Market Metrics:
+• Volume: $${analysis.metrics.volume24h}
+• Liquidity: $${analysis.metrics.liquidityUSD}
+• Market Cap: $${analysis.metrics.marketCap}
 `;
 
+      const analysisMessage = `
+🤖 AI Analysis:
+${analysis.analysis}
+      `;
       const tradeKeyboard = {
         inline_keyboard: [
           [
-            { text: "🟢 Buy", callback_data: `trade_buy_${symbol}` },
-            { text: "🔴 Sell", callback_data: `trade_sell_${symbol}` },
+            { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
+            {
+              text: "💰 Analysis",
+              callback_data: `trade_sell_${tokenAddress}`,
+            },
           ],
-          [
-            { text: "💰 Check Balance", callback_data: "trade_balance" },
-          ],
+          [{ text: "💰 Check Balance", callback_data: "trade_balance" }],
         ],
       };
 
       await this.bot.sendMessage(msg.chat.id, tradeMessage, {
+        parse_mode: "Markdown"
+      });
+      await this.bot.sendMessage(msg.chat.id, analysisMessage, {
+        parse_mode: "Markdown",
         reply_markup: tradeKeyboard,
       });
     });
@@ -283,14 +258,50 @@ Trading Analysis for ${symbol}:
     this.bot.on("callback_query", this.handleCallbackQuery.bind(this));
   }
 
+  async sendTrending(chatId) {
+    try {
+      // Fetch trending data
+      const response = await fetch(
+        `${this.marketEndpoints.coingecko.base}${this.marketEndpoints.coingecko.trends}?x_cg_demo_api_key=${process.env.CG_API_KEY}`
+      );
+      const data = await response.json();
+
+      // Format trending coins message
+      await this.bot.sendMessage(chatId, "🔥 *Trending Coins*\n\n", {
+        parse_mode: "Markdown",
+      });
+      for (const { item } of data.coins) {
+        try {
+          let coinMessage = `*${item.name}* (${item.symbol.toUpperCase()})\n`;
+          coinMessage += `💰 Price: $${item.data.price}\n`;
+          coinMessage += `📊 24h Volume: $${item.data.total_volume}\n`;
+          coinMessage += `🏆 Rank: #${item.market_cap_rank}\n\n`;
+
+          // Send coin image if available
+          if (item.large && item.large.startsWith("http")) {
+            await this.bot.sendPhoto(chatId, item.large);
+          }
+          await this.bot.sendMessage(chatId, coinMessage, {
+            parse_mode: "Markdown",
+          });
+        } catch (err) {
+          console.error(`Error processing coin ${item.name}:`, err);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching trending:", error);
+      await this.bot.sendMessage(chatId, "Error fetching market data");
+    }
+  }
+
   async handlePrice(chatId, tokenAddress) {
     try {
       // Fetch token info from GeckoTerminal
       const onchainData = await this.getOnchainMetrics(tokenAddress);
 
-      // Get price chart image from GeckoTerminal 
+      // Get price chart image from GeckoTerminal
       const chartUrl = `https://www.coingecko.com/en/coins/${onchainData.name.toLowerCase()}`;
-      
+
       // Get BSCScan preview
       const bscscanUrl = `${this.scannerUrl}token/${tokenAddress}`;
 
@@ -303,11 +314,15 @@ Trading Analysis for ${symbol}:
 • 1h: ${onchainData.priceChange.h1}%
 • 6h: ${onchainData.priceChange.h6}%
 • 24h: ${onchainData.priceChange.h24}%
-💎 24h Volume: $${(onchainData.volume24h).toLocaleString()}
+💎 24h Volume: $${onchainData.volume24h.toLocaleString()}
 👥 Holders: ${""}
 🔄 24h Transactions: 
-• Buys: ${onchainData.transactions.h24.buys} (${onchainData.transactions.h24.buyers} buyers)
-• Sells: ${onchainData.transactions.h24.sells} (${onchainData.transactions.h24.sellers} sellers)
+• Buys: ${onchainData.transactions.h24.buys} (${
+        onchainData.transactions.h24.buyers
+      } buyers)
+• Sells: ${onchainData.transactions.h24.sells} (${
+        onchainData.transactions.h24.sellers
+      } sellers)
 
 🏊‍♂️ Top Liquidity Pool:
 • Pool: ${onchainData.pool.name}
@@ -317,21 +332,24 @@ Trading Analysis for ${symbol}:
       const keyboard = {
         inline_keyboard: [
           [
-        { text: "📈 Price Chart", url: chartUrl },
-        { text: "🔍 BSCScan", url: bscscanUrl }
+            { text: "📈 Price Chart", url: chartUrl },
+            { text: "🔍 BSCScan", url: bscscanUrl },
           ],
           [
-        { text: "🛒 Buy", callback_data: `buy_token_${tokenAddress}` },
-        { text: "💰 Analysis", callback_data: `sell_token_${tokenAddress}` },
+            { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
+            {
+              text: "💰 Analysis",
+              callback_data: `trade_sell_${tokenAddress}`,
+            },
           ],
         ],
       };
 
       // Send message with chart image
       await this.bot.sendPhoto(chatId, onchainData.image_url);
-      await this.bot.sendMessage(chatId, message, { 
-        parse_mode: 'HTML',
-        reply_markup: keyboard 
+      await this.bot.sendMessage(chatId, message, {
+        parse_mode: "HTML",
+        reply_markup: keyboard,
       });
     } catch (error) {
       console.error("Price fetch error:", error);
@@ -517,31 +535,39 @@ Trading Analysis for ${symbol}:
     if (!globalMetrics?.data) return 0;
 
     const metrics = {
-      marketCap: globalMetrics.data.total_market_cap.usd,
-      volume24h: globalMetrics.data.total_volume.usd,
-      btcDominance: globalMetrics.data.market_cap_percentage.btc,
-      marketCapChange: globalMetrics.data.market_cap_change_percentage_24h_usd,
+      defiMarketCap: parseFloat(globalMetrics.data.defi_market_cap),
+      ethMarketCap: parseFloat(globalMetrics.data.eth_market_cap),
+      defiToEthRatio: parseFloat(globalMetrics.data.defi_to_eth_ratio),
+      volume24h: parseFloat(globalMetrics.data.trading_volume_24h),
+      defiDominance: parseFloat(globalMetrics.data.defi_dominance),
+      topCoinDominance: parseFloat(globalMetrics.data.top_coin_defi_dominance)
     };
 
-    const volumeToMcap = metrics.volume24h / metrics.marketCap;
-    const marketHealth = metrics.marketCapChange > 0 ? 0.6 : 0.4;
-    const dominanceImpact = metrics.btcDominance > 50 ? 0.7 : 0.3;
+    // Calculate key indicators
+    const volumeToDefiMcap = metrics.volume24h / metrics.defiMarketCap;
+    const marketHealth = metrics.defiToEthRatio > 20 ? 0.7 : 0.4; // Higher ratio indicates healthier DeFi market
+    const dominanceImpact = metrics.defiDominance > 5 ? 0.8 : 0.3; // Higher DeFi dominance is positive
+    const topCoinRisk = metrics.topCoinDominance > 25 ? 0.3 : 0.7; // Lower top coin dominance means less concentration risk
 
     return {
-      liquidity: volumeToMcap,
+      liquidity: Math.min(volumeToDefiMcap, 1),
       health: marketHealth,
       dominance: dominanceImpact,
-      overallScore:
-        volumeToMcap * 0.3 + marketHealth * 0.4 + dominanceImpact * 0.3,
+      concentration: topCoinRisk,
+      overallScore: (
+        volumeToDefiMcap * 0.25 + 
+        marketHealth * 0.3 + 
+        dominanceImpact * 0.25 + 
+        topCoinRisk * 0.2
+      )
     };
   }
 
   async analyzeTradingOpportunity(symbol, userId) {
     try {
       // Fetch basic coin data and market conditions
-      const [coinData, trends, globalMetrics] = await Promise.all([
-        this.indicators.getCoinSentiment(symbol.toLowerCase()),
-        this.indicators.getMarketTrends(),
+      const [coinData, globalMetrics] = await Promise.all([
+        this.indicators.getCoinSentiment(symbol),
         this.indicators.getGlobalMetrics(),
       ]);
 
@@ -549,10 +575,9 @@ Trading Analysis for ${symbol}:
         throw new Error("Unable to fetch coin data");
       }
 
-      console.log(coinData.contract_address);
       // Fetch onchain metrics from GeckoTerminal
       const onchainMetrics = await this.getOnchainMetrics(
-        coinData.contract_address
+        symbol
       );
 
       // Combine all signals including onchain data
@@ -560,7 +585,6 @@ Trading Analysis for ${symbol}:
         technical: this.analyzeTechnicalSignals(coinData),
         fundamentals: this.analyzeFundamentals(coinData),
         sentiment: this.analyzeSentiment(coinData),
-        trend: this.analyzeTrendStrength(trends, symbol),
         market: this.analyzeMarketConditions(globalMetrics),
         volume: this.analyzeVolumeProfile(coinData),
         onchain: this.analyzeOnchainMetrics(onchainMetrics), // New analysis
@@ -571,7 +595,6 @@ Trading Analysis for ${symbol}:
       const llmAnalysis = await this.getLLMAnalysis(
         coinData,
         signals,
-        userRiskProfile,
         onchainMetrics // Pass onchain data to LLM
       );
 
@@ -579,14 +602,9 @@ Trading Analysis for ${symbol}:
         signals,
         userRiskProfile
       );
-      const recommendation = this.getRecommendation(weightedScore, llmAnalysis);
-
-      // Update market patterns
-      this.updateMarketPatterns(symbol, signals, recommendation);
 
       return {
-        recommendation: recommendation.action,
-        confidence: recommendation.confidence,
+        analysis: llmAnalysis,
         reasoning: this.generateDetailedReasoning(signals, llmAnalysis),
         risk: this.calculateRiskLevel(signals),
         metrics: {
@@ -598,16 +616,14 @@ Trading Analysis for ${symbol}:
           marketCap: coinData?.market_data?.market_cap?.usd ?? 0,
           marketCapRank: coinData.market_cap_rank,
           // Onchain metrics
-          onchain: {
-            name: onchainMetrics.name,
-            symbol: onchainMetrics.symbol,
-            currentPrice: onchainMetrics.price,
-            volume24h: onchainMetrics.volume24h,
-            liquidityUSD: onchainMetrics.liquidity,
-            holders: onchainMetrics.holders,
-            priceChange: onchainMetrics.priceChange,
-            transactions24h: onchainMetrics.transactions,
-          },
+          name: onchainMetrics.name,
+          symbol: onchainMetrics.symbol,
+          currentPrice: onchainMetrics.price,
+          volume24h: onchainMetrics.volume24h,
+          liquidityUSD: onchainMetrics.liquidity,
+          holders: onchainMetrics.holders,
+          priceChange: onchainMetrics.priceChange,
+          transactions24h: onchainMetrics.transactions,
         },
       };
     } catch (error) {
@@ -632,7 +648,7 @@ Trading Analysis for ${symbol}:
       const topPool = included[0];
 
       return {
-        image_url:  data.attributes.image_url ?? "",
+        image_url: data.attributes.image_url ?? "",
         name: data.attributes.name,
         symbol: data.attributes.symbol,
         price: data.attributes.price_usd,
@@ -643,7 +659,7 @@ Trading Analysis for ${symbol}:
         pool: {
           address: topPool.attributes.address,
           name: topPool.attributes.name,
-        }
+        },
       };
     } catch (error) {
       console.error("Error fetching onchain metrics:", error);
@@ -664,21 +680,40 @@ Trading Analysis for ${symbol}:
   analyzeOnchainMetrics(metrics) {
     if (!metrics) return { score: 0 };
 
-    const liquidityScore = Math.min(metrics.liquidity / 1000000, 1); // Normalize to 0-1
-    const holdersScore = Math.min(metrics.holders / 10000, 1); // Normalize to 0-1
-    const transactionScore = Math.min(metrics.transactions / 1000, 1); // Normalize to 0-1
+    // Normalize metrics to 0-1 scale
+    const liquidityScore = Math.min(metrics.liquidity / 1000000, 1);
+    const volumeScore = Math.min(metrics.volume24h / 100000, 1);
+    const priceMovement = Math.abs(metrics.priceChange) / 100;
 
+    // Analyze transaction activity from pool data
+    const txActivity = metrics.transactions?.h24 || {};
+    const totalTx = (txActivity.buys || 0) + (txActivity.sells || 0);
+    const txScore = Math.min(totalTx / 1000, 1);
+
+    // Calculate buy/sell ratio
+    const buyRatio = txActivity.buys / (totalTx || 1);
+    const sellRatio = txActivity.sells / (totalTx || 1);
+    const buyPressure = buyRatio > 0.6 ? 0.8 : buyRatio > 0.4 ? 0.5 : 0.2;
+
+    // Volume to liquidity ratio for health check
     const volumeToLiquidity = metrics.volume24h / (metrics.liquidity || 1);
     const healthScore =
       volumeToLiquidity > 0.5 ? 0.8 : volumeToLiquidity > 0.1 ? 0.5 : 0.2;
 
     return {
       liquidity: liquidityScore,
-      holders: holdersScore,
-      transactions: transactionScore,
+      volume: volumeScore,
+      transactions: txScore,
+      priceMovement: priceMovement,
+      buyPressure: buyPressure,
       health: healthScore,
+      poolInfo: {
+        name: metrics.pool?.name || "Unknown",
+        address: metrics.pool?.address || "",
+      },
       score:
-        (liquidityScore + holdersScore + transactionScore + healthScore) / 4,
+        (liquidityScore + volumeScore + txScore + buyPressure + healthScore) /
+        5,
     };
   }
 
@@ -736,9 +771,6 @@ Trading Analysis for ${symbol}:
           throw new Error(`Unsupported order type: ${type}`);
       }
 
-      // Log the order for debugging
-      console.log("Order created:", order);
-
       return {
         success: true,
         orderId: order.id,
@@ -782,23 +814,38 @@ Trading Analysis for ${symbol}:
           public_interest: signals.sentiment?.public || 0,
         },
         market_conditions: {
-          trend_strength: signals.trend?.overallScore || 0,
-          market_health: signals.market?.health || 0,
-          liquidity: signals.market?.liquidity || 0,
+          defi_dominance: signals.market?.dominance || 0,
+          market_health: signals.market?.health || 0, 
+          concentration_risk: signals.market?.concentration || 0,
+          liquidity_score: signals.market?.liquidity || 0
         },
         volume_profile: signals.volume || 0,
         onchain_metrics: {
-          name: onchainMetrics.name,
-          symbol: onchainMetrics.symbol,
-          current_price: onchainMetrics.price,
-          volume_24h: onchainMetrics.volume24h,
-          liquidity: onchainMetrics.liquidity,
-          holders_count: onchainMetrics.holders,
-          price_change: onchainMetrics.priceChange,
-          transactions_24h: onchainMetrics.transactions,
-        },
+          name: onchainMetrics.name || '',
+          symbol: onchainMetrics.symbol || '',
+          price: onchainMetrics.price || 0,
+          volume24h: onchainMetrics.volume24h || 0,
+          liquidity_usd: onchainMetrics.liquidity || 0,
+          transactions: {
+        h24: onchainMetrics.transactions?.h24 || {
+          buys: 0,
+          sells: 0,
+          buyers: 0,
+          sellers: 0
+        }
+          },
+          price_change: {
+        m5: onchainMetrics.priceChange?.m5 || 0,
+        h1: onchainMetrics.priceChange?.h1 || 0,
+        h6: onchainMetrics.priceChange?.h6 || 0,
+        h24: onchainMetrics.priceChange?.h24 || 0
+          },
+          pool_info: {
+        name: onchainMetrics.pool?.name || '',
+        address: onchainMetrics.pool?.address || ''
+          }
+        }
       };
-      console.log(signals);
 
       const prompt = {
         market_data: analysisData,
@@ -815,11 +862,13 @@ Trading Analysis for ${symbol}:
           },
           {
             role: "user",
-            content: `Provide a trading analysis in JSON format for this data: ${JSON.stringify(
+            content: `Provide a trading analysis for ${
+              coinData.description
+            } for this data: ${JSON.stringify(
               prompt,
               null,
               2
-            )}. Include action (BUY/SELL/HOLD), confidence (0-1), reasons (string), and risk (LOW/MEDIUM/HIGH) without markdown and explanation`,
+            )}. Include action (BUY/SELL/HOLD), confidence (0% - 100%), reasons (string), and risk (LOW/MEDIUM/HIGH) with comprehensive explanation, make sure it is within 3000 characters`,
           },
         ],
         model: "llama-3.3-70b-versatile",
@@ -835,24 +884,8 @@ Trading Analysis for ${symbol}:
       }
 
       const cleanContent = response.choices[0].message.content; // Extract JSON object
-      const analysis = JSON.parse(cleanContent);
 
-      // Validate the response has required fields
-      if (
-        !analysis.trading_analysis.action ||
-        !analysis.trading_analysis.confidence ||
-        !analysis.trading_analysis.reasons ||
-        !analysis.trading_analysis.risk
-      ) {
-        throw new Error("Invalid analysis format from Groq");
-      }
-
-      return {
-        recommendation: analysis.trading_analysis.action,
-        confidence: analysis.trading_analysis.confidence,
-        reasoning: analysis.trading_analysis.reasons,
-        risk: analysis.trading_analysis.risk,
-      };
+      return cleanContent;
     } catch (error) {
       console.error("LlamaAI analysis error:", error);
       return {
