@@ -267,7 +267,7 @@ Need more help? Contact @admin`;
 
   async sendAnalysis(chatId, tokenAddress, userId) {
     const analysis = await this.analyzeTradingOpportunity(tokenAddress, userId);
-    const technical = this.describeTechnicalSignals(analysis.analysis.technicalSignals);
+    const technical = this.describeTechnicalSignals(analysis.signals.technical);
 
     const tradeMessage = `
 ${technical}
