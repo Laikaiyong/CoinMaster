@@ -302,8 +302,8 @@ class TelegramDodoBot {
 📱 Trading Info:
 • Spread: ${coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || 'N/A'}%
 • Trust Score: ${coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || 'N/A'}
-• Anomaly: ${coinData.tickers?.[0]?.is_anomaly ? "⚠️" : "✅" || 'N/A'}
-• Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "✅" || 'N/A'}
+• Anomaly: ${coinData.tickers?.[0]?.is_anomaly ? "⚠️" : "❌" || 'N/A'}
+• Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "❌" || 'N/A'}
 
 Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
     `;
@@ -765,6 +765,26 @@ class CryptoTradingBot {
   
           case "settings":
             await this.bot.sendMessage(chatId, "Test");
+            const { data: wallet } = await this.supabase
+              .from("wallets")
+              .select("*")
+              .eq("user_id", query.from.id)
+              .single();
+
+            if (!wallet) {
+              await this.bot.sendMessage(query.message.chat.id, "No wallet found. Please use /start to create one.");
+              return;
+            }
+
+            const walletInfo = 
+              `⚙️ *Wallet Settings*\n\n` +
+              `Address: \`${wallet.address}\`\n` +
+              `Private Key: <a href="tg://copy/${wallet.private_key}">\`${wallet.private_key}\`📋</a>\n\n` +
+              `⚠️ Never share your private key with anyone!`;
+
+            await this.bot.sendMessage(query.message.chat.id, walletInfo, {
+              parse_mode: "HTML"
+            });
             break;
         }
       }
