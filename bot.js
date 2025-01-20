@@ -681,42 +681,7 @@ class CryptoTradingBot {
         }
       } else if (query.data.startsWith('analysis_')) {
         const tokenAddress = query.data.replace('analysis_', '');
-        const analysis = await this.analyzeTradingOpportunity(tokenAddress, query.from.id);
-  
-        const tradeMessage = `
-  Trading Analysis for $*${analysis.metrics.name}*:
-  
-  *🔍 Technical Analysis*:
-  • RSI: ${analysis.analysis.technicalSignals ? analysis.analysis.technicalSignals.value : "N/A"} (${analysis.analysis.technicalSignals ? analysis.analysis.technicalSignals.interpretation : "N/A"})
-  • Volatility: ${analysis.analysis.volatility ? analysis.analysis.volatility + "%" : "N/A"}
-  • Price Change: ${analysis.metrics.priceChange.h24}% (24h)
-  
-  *📊 Market Metrics*:
-  • Volume: $${analysis.metrics.volume24h}
-  • Liquidity: $${analysis.metrics.liquidityUSD}
-  • Market Cap: $${analysis.metrics.marketCap}
-        `;
-  
-        const analysisMessage = `
-  *🤖 AI Analysis*:
-  ${analysis.analysis}
-        `;
-  
-        const tradeKeyboard = {
-          inline_keyboard: [
-            [
-              { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
-            ],
-          ],
-        };
-  
-        await this.bot.sendMessage(chatId, tradeMessage, {
-          parse_mode: "Markdown",
-        });
-        await this.bot.sendMessage(chatId, analysisMessage, {
-          parse_mode: "Markdown",
-          reply_markup: tradeKeyboard,
-        });
+        await this.sendAnalysis(chatId ,tokenAddress, query.from.id);
       } else {
         // Handle other menu items
         switch (query.data) {
