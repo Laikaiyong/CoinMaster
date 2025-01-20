@@ -14,6 +14,7 @@ const res = require("express/lib/response");
 require("dotenv").config();
 
 const telegramBot = new TelegramBot(process.env.TG_API_KEY, { polling: true });
+let dodoBot;
 
 class TelegramDodoBot {
 
@@ -2061,22 +2062,6 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
     }
   }
 }
-
-try {
-  dodoBot = new TelegramDodoBot(
-    telegramBot,
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_KEY,
-    process.env.DODO_API_KEY, 
-    process.env.RPC_URL
-  );
-} catch (error) {
-  console.error('Error initializing DodoBot:', error);
-  process.exit(1);
-}
-
-let cryptoBot;
-let dodoBot;
 
 try {
     // Initialize bots with the same telegram bot instance
