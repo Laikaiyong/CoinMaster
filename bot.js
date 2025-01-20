@@ -625,7 +625,7 @@ class CryptoTradingBot {
 
         const message =
           `💰 Wallet Balance \n` +
-          `BNB | <code>${"0xb8c77482e45f1f44de1745f52c74426c631bdd52"}</code> <a href="tg://copy/${"0xb8c77482e45f1f44de1745f52c74426c631bdd52"}">📋</a>| ${parseFloat(balanceInBNB).toFixed(4)}\n` +
+          `BNB | ${parseFloat(balanceInBNB).toFixed(4)}\n` +
           (tokenBalances ? `\n🪙 Token Balances:\n${tokenBalances}` : "");
 
         let welcomeMessage = `Welcome to CoinMaster! 🚀\n\n`;
@@ -2099,7 +2099,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
 
         const message =
           `💰 Wallet Balance \n` +
-          `BNB | <code>${"0xb8c77482e45f1f44de1745f52c74426c631bdd52"}</code> <a href="tg://copy/${"0xb8c77482e45f1f44de1745f52c74426c631bdd52"}">📋</a>| ${parseFloat(balanceInBNB).toFixed(4)}\n` +
+          `BNB | ${parseFloat(balanceInBNB).toFixed(4)}\n` +
           (tokenBalances ? `\n🪙 Token Balances:\n${tokenBalances}` : "");
 
       const keyboard = {
