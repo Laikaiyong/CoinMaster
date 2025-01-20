@@ -897,7 +897,6 @@ class CryptoTradingBot {
             break;
 
           case "settings":
-            await this.bot.sendMessage(chatId, "Test");
             const { data: wallet } = await this.supabase
               .from("wallets")
               .select("*")
