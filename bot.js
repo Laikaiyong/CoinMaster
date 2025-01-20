@@ -538,7 +538,9 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
 
       // Send message with chart image
       await this.bot.sendPhoto(chatId, onchainData.image_url);
-      await this.bot.sendMessage(chatId, message);
+      await this.bot.sendMessage(chatId, message, {
+        parse_mode: "HTML"
+      });
       await this.bot.sendMessage(chatId, marketMessage, {
         parse_mode: "HTML",
         reply_markup: keyboard,
