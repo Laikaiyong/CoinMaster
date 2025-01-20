@@ -18,15 +18,14 @@ let dodoBot;
 let cryptoBot;
 
 class TelegramDodoBot {
-
   constructor(telegramBot, supabaseUrl, supabaseKey, apiKey, rpcUrl) {
-      this.bot = telegramBot;
-      this.supabase = createClient(supabaseUrl, supabaseKey);
-      this.rpcUrl = rpcUrl;
-      this.apiKey = apiKey;
-      this.dodoAPI = "https://api.dodoex.io/route-service/developer/swap";
-      this.rpcProvider = new ethers.JsonRpcProvider(rpcUrl);
-      this.setupPerception();
+    this.bot = telegramBot;
+    this.supabase = createClient(supabaseUrl, supabaseKey);
+    this.rpcUrl = rpcUrl;
+    this.apiKey = apiKey;
+    this.dodoAPI = "https://api.dodoex.io/route-service/developer/swap";
+    this.rpcProvider = new ethers.JsonRpcProvider(rpcUrl);
+    this.setupPerception();
   }
 
   setupPerception() {
@@ -50,19 +49,25 @@ class TelegramDodoBot {
 
           const coin = coinList.find((coin) => {
             try {
-                // Check if coin and platforms exist
-                if (!coin || !coin.platforms || !coin.platforms["binance-smart-chain"]) {
-                    return false;
-                }
-        
-                // Ensure both addresses are strings and normalize them
-                const platformAddress = String(coin.platforms["binance-smart-chain"]).toLowerCase();
-                const searchAddress = String(contractAddress).toLowerCase();
-        
-                return platformAddress === searchAddress;
-            } catch (error) {
-                console.error("Error comparing addresses:", error);
+              // Check if coin and platforms exist
+              if (
+                !coin ||
+                !coin.platforms ||
+                !coin.platforms["binance-smart-chain"]
+              ) {
                 return false;
+              }
+
+              // Ensure both addresses are strings and normalize them
+              const platformAddress = String(
+                coin.platforms["binance-smart-chain"]
+              ).toLowerCase();
+              const searchAddress = String(contractAddress).toLowerCase();
+
+              return platformAddress === searchAddress;
+            } catch (error) {
+              console.error("Error comparing addresses:", error);
+              return false;
             }
           });
 
@@ -102,143 +107,165 @@ class TelegramDodoBot {
   }
 
   async getUserPrivateKey(userId) {
-      try {
-          const { data, error } = await this.supabase
-              .from('wallets')  // Replace with your table name
-              .select('private_key')
-              .eq('user_id', userId)
-              .single();
+    try {
+      const { data, error } = await this.supabase
+        .from("wallets") // Replace with your table name
+        .select("private_key")
+        .eq("user_id", userId)
+        .single();
 
-          if (error) throw error;
-          if (!data || !data.private_key) {
-              throw new Error('No private key found for user');
-          }
-
-          return data.private_key;
-      } catch (error) {
-          console.error('Error fetching private key:', error);
-          throw error;
+      if (error) throw error;
+      if (!data || !data.private_key) {
+        throw new Error("No private key found for user");
       }
+
+      return data.private_key;
+    } catch (error) {
+      console.error("Error fetching private key:", error);
+      throw error;
+    }
   }
 
   async handleBuyCommand(chatId, userId, tokenAddress, amount) {
-      try {
-          // Get user's private key from Supabase
-          const privateKey = await this.getUserPrivateKey(userId);
-          const wallet = new ethers.Wallet(privateKey, this.rpcProvider);
+    try {
+      // Get user's private key from Supabase
+      const privateKey = await this.getUserPrivateKey(userId);
+      const wallet = new ethers.Wallet(privateKey, this.rpcProvider);
 
-          await this.executeDodoSwap(chatId, tokenAddress, amount, wallet);
-
-      } catch (error) {
-          if (error.message === 'No private key found for user') {
-              await this.bot.sendMessage(chatId, '❌ Please set up your private key first using the /setup command.');
-          } else {
-              console.error('Error in buy command:', error);
-              await this.bot.sendMessage(chatId, '❌ An error occurred while processing your request.');
-          }
+      await this.executeDodoSwap(chatId, tokenAddress, amount, wallet);
+    } catch (error) {
+      if (error.message === "No private key found for user") {
+        await this.bot.sendMessage(
+          chatId,
+          "❌ Please set up your private key first using the /setup command."
+        );
+      } else {
+        console.error("Error in buy command:", error);
+        await this.bot.sendMessage(
+          chatId,
+          "❌ An error occurred while processing your request."
+        );
       }
+    }
   }
 
   async executeDodoSwap(chatId, toTokenAddress, bnbAmount, wallet) {
-      try {
-          await this.bot.sendMessage(chatId, '🔄 Processing your swap request...');
+    try {
+      await this.bot.sendMessage(chatId, "🔄 Processing your swap request...");
 
-          const fromTokenAddress = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"; // BNB
-          const fromAmount = ethers.parseUnits(bnbAmount.toString(), 18);
+      const fromTokenAddress = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"; // BNB
+      const fromAmount = ethers.parseUnits(bnbAmount.toString(), 18);
 
-          // Get swap route from DODO API
-          const response = await axios.get(this.dodoAPI, {
-              params: {
-                  fromTokenAddress,
-                  toTokenAddress,
-                  fromAmount: fromAmount.toString(),
-                  slippage: 1.5,
-                  userAddr: wallet.address,
-                  chainId: 56,
-                  rpc: this.rpcUrl,
-                  apikey: this.apiKey,
-              },
-          });
+      // Get swap route from DODO API
+      const response = await axios.get(this.dodoAPI, {
+        params: {
+          fromTokenAddress,
+          toTokenAddress,
+          fromAmount: fromAmount.toString(),
+          slippage: 1.5,
+          userAddr: wallet.address,
+          chainId: 56,
+          rpc: this.rpcUrl,
+          apikey: this.apiKey,
+        },
+      });
 
-          if (response.data.status === 200) {
-              const routeObj = response.data.data;
-              await this.bot.sendMessage(chatId, '📊 Got the best swap route. Preparing transaction...');
+      if (response.data.status === 200) {
+        const routeObj = response.data.data;
+        await this.bot.sendMessage(
+          chatId,
+          "📊 Got the best swap route. Preparing transaction..."
+        );
 
-              // Check and handle allowance if needed
-              if (fromTokenAddress !== "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
-                  const hasApproved = await this.checkAllowance(
-                      fromTokenAddress,
-                      routeObj.to,
-                      wallet.address,
-                      fromAmount,
-                      wallet
-                  );
+        // Check and handle allowance if needed
+        if (fromTokenAddress !== "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
+          const hasApproved = await this.checkAllowance(
+            fromTokenAddress,
+            routeObj.to,
+            wallet.address,
+            fromAmount,
+            wallet
+          );
 
-                  if (!hasApproved) {
-                      await this.bot.sendMessage(chatId, '🔓 Approving tokens...');
-                      await this.doApprove(fromTokenAddress, routeObj.to, fromAmount, wallet);
-                      await this.bot.sendMessage(chatId, '✅ Tokens approved successfully');
-                  }
-              }
-
-              // Estimate gas and prepare transaction
-              const gasLimit = await wallet.estimateGas({
-                  to: routeObj.to,
-                  data: routeObj.data,
-                  value: fromAmount,
-              });
-
-              const gasPrice = await wallet.getGasPrice();
-              const nonce = await wallet.getTransactionCount();
-
-              const tx = {
-                  from: wallet.address,
-                  to: routeObj.to,
-                  value: fromAmount,
-                  nonce,
-                  gasLimit: ethers.utils.hexlify(gasLimit),
-                  gasPrice: ethers.utils.hexlify(gasPrice),
-                  data: routeObj.data,
-              };
-
-              // Execute the swap
-              await this.bot.sendMessage(chatId, '🚀 Executing swap...');
-              const result = await wallet.sendTransaction(tx);
-              
-              await this.bot.sendMessage(
-                  chatId,
-                  `✅ Swap successful!\nTransaction Hash: ${result.hash}\nView on BSCScan: https://bscscan.com/tx/${result.hash}`
-              );
+          if (!hasApproved) {
+            await this.bot.sendMessage(chatId, "🔓 Approving tokens...");
+            await this.doApprove(
+              fromTokenAddress,
+              routeObj.to,
+              fromAmount,
+              wallet
+            );
+            await this.bot.sendMessage(
+              chatId,
+              "✅ Tokens approved successfully"
+            );
           }
-      } catch (error) {
-          console.error('Swap error:', error);
-        
-          let errorMessage = '❌ Error executing swap. Please try again later.';
-          
-          if (error.code === 'INSUFFICIENT_FUNDS') {
-              errorMessage = '❌ Insufficient funds to complete the transaction.';
-          } else if (error.message?.includes('user rejected')) {
-              errorMessage = '❌ Transaction was rejected.';
-          } else if (error.message?.includes('gas required exceeds allowance')) {
-              errorMessage = '❌ Gas required exceeds balance. Please reduce the amount.';
-          }
-          
-          await this.bot.sendMessage(chatId, errorMessage);
+        }
+
+        // Estimate gas and prepare transaction
+        const gasLimit = await wallet.estimateGas({
+          to: routeObj.to,
+          data: routeObj.data,
+          value: fromAmount,
+        });
+
+        const gasPrice = await wallet.getGasPrice();
+        const nonce = await wallet.getTransactionCount();
+
+        const tx = {
+          from: wallet.address,
+          to: routeObj.to,
+          value: fromAmount,
+          nonce,
+          gasLimit: ethers.utils.hexlify(gasLimit),
+          gasPrice: ethers.utils.hexlify(gasPrice),
+          data: routeObj.data,
+        };
+
+        // Execute the swap
+        await this.bot.sendMessage(chatId, "🚀 Executing swap...");
+        const result = await wallet.sendTransaction(tx);
+
+        await this.bot.sendMessage(
+          chatId,
+          `✅ Swap successful!\nTransaction Hash: ${result.hash}\nView on BSCScan: https://bscscan.com/tx/${result.hash}`
+        );
       }
+    } catch (error) {
+      console.error("Swap error:", error);
+
+      let errorMessage = "❌ Error executing swap. Please try again later.";
+
+      if (error.code === "INSUFFICIENT_FUNDS") {
+        errorMessage = "❌ Insufficient funds to complete the transaction.";
+      } else if (error.message?.includes("user rejected")) {
+        errorMessage = "❌ Transaction was rejected.";
+      } else if (error.message?.includes("gas required exceeds allowance")) {
+        errorMessage =
+          "❌ Gas required exceeds balance. Please reduce the amount.";
+      }
+
+      await this.bot.sendMessage(chatId, errorMessage);
+    }
   }
 
-  async checkAllowance(tokenAddress, targetAddress, userAddress, fromAmount, wallet) {
-      const erc20Contract = new ethers.Contract(tokenAddress, erc20ABI, wallet);
-      const allowance = await erc20Contract.allowance(userAddress, targetAddress);
-      return allowance.gt(fromAmount);
+  async checkAllowance(
+    tokenAddress,
+    targetAddress,
+    userAddress,
+    fromAmount,
+    wallet
+  ) {
+    const erc20Contract = new ethers.Contract(tokenAddress, erc20ABI, wallet);
+    const allowance = await erc20Contract.allowance(userAddress, targetAddress);
+    return allowance.gt(fromAmount);
   }
 
   async doApprove(tokenAddress, targetAddress, fromAmount, wallet) {
-      const erc20Contract = new ethers.Contract(tokenAddress, erc20ABI, wallet);
-      const approveTx = await erc20Contract.approve(targetAddress, fromAmount);
-      await approveTx.wait();
+    const erc20Contract = new ethers.Contract(tokenAddress, erc20ABI, wallet);
+    const approveTx = await erc20Contract.approve(targetAddress, fromAmount);
+    await approveTx.wait();
   }
-
 
   async handlePrice(chatId, tokenAddress) {
     try {
@@ -281,29 +308,37 @@ class TelegramDodoBot {
       `;
       const marketMessage = `
 💼 Market Data:
-• Market Cap Rank: #${coinData.market_cap_rank || 'N/A'}
+• Market Cap Rank: #${coinData.market_cap_rank || "N/A"}
 • Market Cap: $${(coinData.market_data?.market_cap?.usd || 0).toLocaleString()}
 • TVL: $${coinData.market_data?.total_value_locked?.usd || 0}
-• MCap/TVL: ${coinData.market_data?.mcap_to_tvl_ratio || 'N/A'}
-• FDV/TVL: ${coinData.market_data?.fdv_to_tvl_ratio || 'N/A'}
-• MCap/FDV: ${coinData.market_data?.market_cap_fdv_ratio || 'N/A'}
+• MCap/TVL: ${coinData.market_data?.mcap_to_tvl_ratio || "N/A"}
+• FDV/TVL: ${coinData.market_data?.fdv_to_tvl_ratio || "N/A"}
+• MCap/FDV: ${coinData.market_data?.market_cap_fdv_ratio || "N/A"}
 
 📈 Price Info:
 • Current: $${coinData.market_data?.current_price?.usd?.toFixed(8) || 0}
-• ATH: $${coinData.market_data?.ath?.usd?.toFixed(8) || 0} (${coinData.market_data?.ath_change_percentage?.usd?.toFixed(2) || 0}%)
-• ATL: $${coinData.market_data?.atl?.usd?.toFixed(8) || 0} (${coinData.market_data?.atl_change_percentage?.usd?.toFixed(2) || 0}%)
+• ATH: $${coinData.market_data?.ath?.usd?.toFixed(8) || 0} (${
+        coinData.market_data?.ath_change_percentage?.usd?.toFixed(2) || 0
+      }%)
+• ATL: $${coinData.market_data?.atl?.usd?.toFixed(8) || 0} (${
+        coinData.market_data?.atl_change_percentage?.usd?.toFixed(2) || 0
+      }%)
 
 📊 Supply:
-• Total: ${(coinData.market_data?.total_supply || 0)}
-• Max: ${(coinData.market_data?.max_supply || 0)}
-• FDV: $${(coinData.market_data?.fully_diluted_valuation?.usd || 0)}
-• Circulating: ${(coinData.market_data?.circulating_supply || 0)}
+• Total: ${coinData.market_data?.total_supply || 0}
+• Max: ${coinData.market_data?.max_supply || 0}
+• FDV: $${coinData.market_data?.fully_diluted_valuation?.usd || 0}
+• Circulating: ${coinData.market_data?.circulating_supply || 0}
 
 📱 Trading Info:
-• Spread: ${coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || 'N/A'}%
-• Trust Score: ${coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || 'N/A'}
-• Anomaly: ${coinData.tickers?.[0]?.is_anomaly ? "⚠️" : "❌" || 'N/A'}
-• Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "❌" || 'N/A'}
+• Spread: ${
+        coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || "N/A"
+      }%
+• Trust Score: ${
+        coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || "N/A"
+      }
+• Anomaly: ${coinData.tickers?.[0]?.is_anomaly ? "⚠️" : "❌" || "N/A"}
+• Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "❌" || "N/A"}
 
 Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
     `;
@@ -327,7 +362,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
       // Send message with chart image
       await this.bot.sendPhoto(chatId, onchainData.image_url);
       await this.bot.sendMessage(chatId, message, {
-        parse_mode: "HTML"
+        parse_mode: "HTML",
       });
       await this.bot.sendMessage(chatId, marketMessage, {
         parse_mode: "HTML",
@@ -338,7 +373,6 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
       await this.bot.sendMessage(chatId, "Error fetching token information");
     }
   }
-
 
   async getOnchainMetrics(tokenAddress) {
     try {
@@ -458,19 +492,25 @@ class CryptoTradingBot {
 
           const coin = coinList.find((coin) => {
             try {
-                // Check if coin and platforms exist
-                if (!coin || !coin.platforms || !coin.platforms["binance-smart-chain"]) {
-                    return false;
-                }
-        
-                // Ensure both addresses are strings and normalize them
-                const platformAddress = String(coin.platforms["binance-smart-chain"]).toLowerCase();
-                const searchAddress = String(contractAddress).toLowerCase();
-        
-                return platformAddress === searchAddress;
-            } catch (error) {
-                console.error("Error comparing addresses:", error);
+              // Check if coin and platforms exist
+              if (
+                !coin ||
+                !coin.platforms ||
+                !coin.platforms["binance-smart-chain"]
+              ) {
                 return false;
+              }
+
+              // Ensure both addresses are strings and normalize them
+              const platformAddress = String(
+                coin.platforms["binance-smart-chain"]
+              ).toLowerCase();
+              const searchAddress = String(contractAddress).toLowerCase();
+
+              return platformAddress === searchAddress;
+            } catch (error) {
+              console.error("Error comparing addresses:", error);
+              return false;
             }
           });
 
@@ -518,7 +558,7 @@ class CryptoTradingBot {
           .select("*")
           .eq("user_id", msg.from.id)
           .single();
-  
+
         if (!wallet || !wallet.address) {
           const account = this.web3.eth.accounts.create();
           const { data, error } = await this.supabase
@@ -532,72 +572,126 @@ class CryptoTradingBot {
             ])
             .select()
             .single();
-  
+
           if (error) {
             console.error("Error creating wallet:", error);
             return;
           }
           wallet = data;
         }
-  
         // Get BNB balance
         const balance = await this.web3.eth.getBalance(wallet.address);
         const balanceInBNB = this.web3.utils.fromWei(balance, "ether");
-  
-        const message = `💰 Wallet Balance \n` +
-          `BNB Balance: ${parseFloat(balanceInBNB).toFixed(4)} BNB\n\n`;
-  
+
+
+        // Get token transfers to find all tokens in wallet
+        const apiKey = process.env.BSC_API_KEY;
+        const bscScanUrl = `https://api.bscscan.com/api?module=account&action=tokentx&address=${wallet.address}&startblock=0&endblock=999999999&sort=desc&apikey=${apiKey}`;
+
+        try {
+          // Then scan for other tokens using BSCScan API
+          const response = await fetch(bscScanUrl);
+          const data = await response.json();
+
+          if (data.status === "1" && data.result) {
+            for (const tx of data.result) {
+              const tokenAddress = tx.contractAddress.toLowerCase();
+
+              // Skip if already processed
+              if (processedTokens.has(tokenAddress)) continue;
+
+              try {
+                const contract = new this.web3.eth.Contract(
+                  erc20ABI,
+                  tokenAddress
+                );
+                const [balance, decimals, symbol] = await Promise.all([
+                  contract.methods.balanceOf(wallet.address).call(),
+                  contract.methods.decimals().call(),
+                  contract.methods.symbol().call(),
+                ]);
+
+                const formattedBalance = balance / Math.pow(10, decimals);
+                if (formattedBalance > 0) {
+                  tokenBalances += `${symbol}: ${formattedBalance.toFixed(
+                    4
+                  )}\n`;
+                }
+                processedTokens.add(tokenAddress);
+              } catch (error) {
+                console.error(
+                  `Error fetching token balance for ${tokenAddress}:`,
+                  error
+                );
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error scanning wallet:", error);
+          tokenBalances = "Error fetching token balances";
+        }
+
+        const message =
+          `💰 Wallet Balance \n` +
+          `BNB Balance: ${parseFloat(balanceInBNB).toFixed(4)} BNB\n` +
+          (tokenBalances ? `\n🪙 Token Balances:\n${tokenBalances}` : "");
+
         let welcomeMessage = `Welcome to CoinMaster! 🚀\n\n`;
         welcomeMessage += `Your Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>\n\n`;
         welcomeMessage += message;
         welcomeMessage += `\nI can help you with:\n📊 Trading Analysis & Strategies\n💹 Market Analysis\n`;
-  
         const keyboard = {
           inline_keyboard: [
             [
               { text: "🛒 Buy", callback_data: "buy" },
               { text: "🤑 Sell", callback_data: "sell" },
-              { text: "💰 Check Balance", callback_data: "check_balance" }
+              { text: "💰 Check Balance", callback_data: "check_balance" },
             ],
             [
               { text: "📈 Price", callback_data: "price" },
-              { text: "📊 Trending", callback_data: "trending" }
+              { text: "📊 Trending", callback_data: "trending" },
             ],
             [
               { text: "🤝 Help", callback_data: "help" },
-              { text: "⚙️ Settings", callback_data: "settings" }
-            ]
-          ]
+              { text: "⚙️ Settings", callback_data: "settings" },
+            ],
+          ],
         };
-  
+
         await this.bot.sendMessage(msg.chat.id, welcomeMessage, {
           parse_mode: "HTML",
-          reply_markup: keyboard
+          reply_markup: keyboard,
         });
       } catch (error) {
         console.error("Error in start command:", error);
-        await this.bot.sendMessage(msg.chat.id, "❌ An error occurred while setting up your wallet.");
+        await this.bot.sendMessage(
+          msg.chat.id,
+          "❌ An error occurred while setting up your wallet."
+        );
       }
     });
-  
+
     // Analysis command handler
     this.bot.onText(/\/analysis (.+)/, async (msg, match) => {
       const tokenAddress = match[1];
       await this.sendAnalysis(msg.chat.id, tokenAddress, msg.from.id);
     });
-    
+
     // this.bot.onText(/\/trade/ (.+)/, async (msg, match) => {
     //   const tokenAddress = match[1];
     //   await this.handleTradeCallbacks(query);
     // });
-  
+
     // Bind the callback query handler correctly
     this.bot.on("callback_query", async (query) => {
       try {
         await this.handleCallbackQuery(query);
       } catch (error) {
         console.error("Error in callback query handler:", error);
-        await this.bot.sendMessage(query.message.chat.id, "❌ An error occurred while processing your request.");
+        await this.bot.sendMessage(
+          query.message.chat.id,
+          "❌ An error occurred while processing your request."
+        );
       }
     });
   }
@@ -605,9 +699,11 @@ class CryptoTradingBot {
   async sendAnalysis(chatId, tokenAddress, userId) {
     const analysis = await this.analyzeTradingOpportunity(tokenAddress, userId);
     const technical = this.describeTechnicalSignals(analysis.signals.technical);
-    const fundamentals = this.describeFundamentals(analysis.signals.fundamentals);
+    const fundamentals = this.describeFundamentals(
+      analysis.signals.fundamentals
+    );
     const sentiment = this.describeSentiment(analysis.signals.sentiment);
-  
+
     const tradeMessage = `
   ${technical}
   • Price Change: ${analysis.metrics.priceChange.h24}% (24h)
@@ -621,12 +717,12 @@ class CryptoTradingBot {
   • Liquidity: $${analysis.metrics.liquidityUSD}
   • Market Cap: $${analysis.metrics.marketCap}
   `;
-  
+
     const analysisMessage = `
   🤖 AI Analysis:
   ${analysis.analysis}
     `;
-  
+
     const tradeKeyboard = {
       inline_keyboard: [
         [
@@ -636,7 +732,7 @@ class CryptoTradingBot {
         [{ text: "💰 Check Balance", callback_data: "check_balance" }],
       ],
     };
-  
+
     await this.bot.sendMessage(chatId, tradeMessage, {
       parse_mode: "Markdown",
     });
@@ -645,45 +741,62 @@ class CryptoTradingBot {
       reply_markup: tradeKeyboard,
     });
   }
-  
 
   async handleCallbackQuery(query) {
     const chatId = query.message.chat.id;
     try {
       this.bot.answerCallbackQuery(query.id);
-      
-      if (query.data.startsWith('swap_execute_')) {
-        const tokenAddress = query.data.replace('swap_execute_', '');
+
+      if (query.data.startsWith("swap_execute_")) {
+        const tokenAddress = query.data.replace("swap_execute_", "");
         try {
           const amountMessage = await this.bot.sendMessage(
             chatId,
-            'Enter the amount of BNB you want to spend:',
+            "Enter the amount of BNB you want to spend:",
             { reply_markup: { force_reply: true } }
           );
-  
+
           const amountHandler = async (amountReply) => {
             try {
               this.bot.removeReplyListener(amountHandler);
               const amount = parseFloat(amountReply.text);
               if (isNaN(amount)) {
-                await this.bot.sendMessage(amountReply.chat.id, '❌ Invalid amount. Please enter a valid number.');
+                await this.bot.sendMessage(
+                  amountReply.chat.id,
+                  "❌ Invalid amount. Please enter a valid number."
+                );
                 return;
               }
-              await dodoBot.handleBuyCommand(amountReply.chat.id, amountReply.from.id, tokenAddress, amount);
+              await dodoBot.handleBuyCommand(
+                amountReply.chat.id,
+                amountReply.from.id,
+                tokenAddress,
+                amount
+              );
             } catch (error) {
-              console.error('Error processing amount:', error);
-              await this.bot.sendMessage(amountReply.chat.id, '❌ Error processing the amount. Please try again.');
+              console.error("Error processing amount:", error);
+              await this.bot.sendMessage(
+                amountReply.chat.id,
+                "❌ Error processing the amount. Please try again."
+              );
             }
           };
-  
-          this.bot.onReplyToMessage(amountMessage.chat.id, amountMessage.message_id, amountHandler);
+
+          this.bot.onReplyToMessage(
+            amountMessage.chat.id,
+            amountMessage.message_id,
+            amountHandler
+          );
         } catch (error) {
-          console.error('Error in swap execution:', error);
-          await this.bot.sendMessage(chatId, '❌ An error occurred while processing your request.');
+          console.error("Error in swap execution:", error);
+          await this.bot.sendMessage(
+            chatId,
+            "❌ An error occurred while processing your request."
+          );
         }
-      } else if (query.data.startsWith('analysis_')) {
-        const tokenAddress = query.data.replace('analysis_', '');
-        await this.sendAnalysis(chatId ,tokenAddress, query.from.id);
+      } else if (query.data.startsWith("analysis_")) {
+        const tokenAddress = query.data.replace("analysis_", "");
+        await this.sendAnalysis(chatId, tokenAddress, query.from.id);
       } else {
         // Handle other menu items
         switch (query.data) {
@@ -691,57 +804,76 @@ class CryptoTradingBot {
             try {
               const sentMessage = await this.bot.sendMessage(
                 chatId,
-                'Enter the token contract address you want to buy (Eg: 0x...dac):',
+                "Enter the token contract address you want to buy (Eg: 0x...dac):",
                 { reply_markup: { force_reply: true } }
               );
-  
+
               const addressHandler = async (addressReply) => {
                 try {
                   this.bot.removeReplyListener(addressHandler);
-  
+
                   if (!addressReply.text) {
-                    await this.bot.sendMessage(addressReply.chat.id, 'Invalid input. Please provide a valid contract address.');
+                    await this.bot.sendMessage(
+                      addressReply.chat.id,
+                      "Invalid input. Please provide a valid contract address."
+                    );
                     return;
                   }
-  
+
                   const tokenAddress = addressReply.text;
-  
+
                   if (!ethers.isAddress(tokenAddress)) {
-                    await this.bot.sendMessage(addressReply.chat.id, '❌ Invalid token address format. Please provide a valid address.');
+                    await this.bot.sendMessage(
+                      addressReply.chat.id,
+                      "❌ Invalid token address format. Please provide a valid address."
+                    );
                     return;
                   }
-  
+
                   await dodoBot.handlePrice(addressReply.chat.id, tokenAddress);
                 } catch (error) {
-                  console.error('Error in buy handler:', error);
-                  await this.bot.sendMessage(addressReply.chat.id, '❌ An error occurred while processing your request.');
+                  console.error("Error in buy handler:", error);
+                  await this.bot.sendMessage(
+                    addressReply.chat.id,
+                    "❌ An error occurred while processing your request."
+                  );
                 }
               };
-  
-              this.bot.onReplyToMessage(sentMessage.chat.id, sentMessage.message_id, addressHandler);
+
+              this.bot.onReplyToMessage(
+                sentMessage.chat.id,
+                sentMessage.message_id,
+                addressHandler
+              );
             } catch (error) {
-              console.error('Error in buy command:', error);
-              await this.bot.sendMessage(chatId, '❌ An error occurred while processing your request.');
+              console.error("Error in buy command:", error);
+              await this.bot.sendMessage(
+                chatId,
+                "❌ An error occurred while processing your request."
+              );
             }
             break;
-  
+
           case "sell":
-            await this.bot.sendMessage(chatId, "Enter the token contract address you want to sell (Eg: 0x...dac):", 
-              { reply_markup: { force_reply: true } });
+            await this.bot.sendMessage(
+              chatId,
+              "Enter the token contract address you want to sell (Eg: 0x...dac):",
+              { reply_markup: { force_reply: true } }
+            );
             break;
-  
+
           case "check_balance":
             await this.handleBalanceCheck(query);
             break;
-  
+
           case "price":
             await this.sendPriceMenu(chatId);
             break;
-  
+
           case "trending":
             await this.sendPool(chatId);
             break;
-  
+
           case "help":
             const helpMessage = `
   🔄 *Wallet Commands*
@@ -756,13 +888,13 @@ class CryptoTradingBot {
   🤝 Help - A helpful guide on CoinMaster 
   ⚙️ Settings - Check your wallet settings here
             `;
-  
+
             await this.bot.sendMessage(chatId, helpMessage, {
               parse_mode: "Markdown",
-              disable_web_page_preview: true
+              disable_web_page_preview: true,
             });
             break;
-  
+
           case "settings":
             await this.bot.sendMessage(chatId, "Test");
             const { data: wallet } = await this.supabase
@@ -772,28 +904,31 @@ class CryptoTradingBot {
               .single();
 
             if (!wallet) {
-              await this.bot.sendMessage(query.message.chat.id, "No wallet found. Please use /start to create one.");
+              await this.bot.sendMessage(
+                query.message.chat.id,
+                "No wallet found. Please use /start to create one."
+              );
               return;
             }
 
-            const walletInfo = 
+            const walletInfo =
               `⚙️ *Wallet Settings*\n\n` +
               `Address: \`${wallet.address}\`\n` +
               `Private Key: <a href="tg://copy/${wallet.private_key}">\`${wallet.private_key}\`📋</a>\n\n` +
               `⚠️ Never share your private key with anyone!`;
 
             await this.bot.sendMessage(query.message.chat.id, walletInfo, {
-              parse_mode: "HTML"
+              parse_mode: "HTML",
             });
             break;
         }
       }
     } catch (error) {
-      console.error('Callback query error:', error);
+      console.error("Callback query error:", error);
       await this.bot.sendMessage(chatId, "Error processing your request");
     }
   }
-  
+
   async sendTrending(chatId) {
     try {
       // Fetch trending data
@@ -834,7 +969,10 @@ class CryptoTradingBot {
             const keyboard = {
               inline_keyboard: [
                 [
-                  { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
+                  {
+                    text: "🛒 Buy",
+                    callback_data: `swap_execute_${tokenAddress}`,
+                  },
                   {
                     text: "💰 Sell",
                     callback_data: `trade_sell_${bscAddress}`,
@@ -986,29 +1124,37 @@ class CryptoTradingBot {
 
       const marketMessage = `
 💼 Market Data:
-• Market Cap Rank: #${coinData.market_cap_rank || 'N/A'}
+• Market Cap Rank: #${coinData.market_cap_rank || "N/A"}
 • Market Cap: $${(coinData.market_data?.market_cap?.usd || 0).toLocaleString()}
 • TVL: $${coinData.market_data?.total_value_locked?.usd || 0}
-• MCap/TVL: ${coinData.market_data?.mcap_to_tvl_ratio || 'N/A'}
-• FDV/TVL: ${coinData.market_data?.fdv_to_tvl_ratio || 'N/A'}
-• MCap/FDV: ${coinData.market_data?.market_cap_fdv_ratio || 'N/A'}
+• MCap/TVL: ${coinData.market_data?.mcap_to_tvl_ratio || "N/A"}
+• FDV/TVL: ${coinData.market_data?.fdv_to_tvl_ratio || "N/A"}
+• MCap/FDV: ${coinData.market_data?.market_cap_fdv_ratio || "N/A"}
 
 📈 Price Info:
 • Current: $${coinData.market_data?.current_price?.usd?.toFixed(8) || 0}
-• ATH: $${coinData.market_data?.ath?.usd?.toFixed(8) || 0} (${coinData.market_data?.ath_change_percentage?.usd?.toFixed(2) || 0}%)
-• ATL: $${coinData.market_data?.atl?.usd?.toFixed(8) || 0} (${coinData.market_data?.atl_change_percentage?.usd?.toFixed(2) || 0}%)
+• ATH: $${coinData.market_data?.ath?.usd?.toFixed(8) || 0} (${
+        coinData.market_data?.ath_change_percentage?.usd?.toFixed(2) || 0
+      }%)
+• ATL: $${coinData.market_data?.atl?.usd?.toFixed(8) || 0} (${
+        coinData.market_data?.atl_change_percentage?.usd?.toFixed(2) || 0
+      }%)
 
 📊 Supply:
-• Total: ${(coinData.market_data?.total_supply || 0)}
-• Max: ${(coinData.market_data?.max_supply || 0)}
-• FDV: $${(coinData.market_data?.fully_diluted_valuation?.usd || 0)}
-• Circulating: ${(coinData.market_data?.circulating_supply || 0)}
+• Total: ${coinData.market_data?.total_supply || 0}
+• Max: ${coinData.market_data?.max_supply || 0}
+• FDV: $${coinData.market_data?.fully_diluted_valuation?.usd || 0}
+• Circulating: ${coinData.market_data?.circulating_supply || 0}
 
 📱 Trading Info:
-• Spread: ${coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || 'N/A'}%
-• Trust Score: ${coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || 'N/A'}
-• Anomaly: ${coinData.tickers?.[0]?.is_anomaly ? "⚠️" : "❌" || 'N/A'}
-• Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "❌" || 'N/A'}
+• Spread: ${
+        coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || "N/A"
+      }%
+• Trust Score: ${
+        coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || "N/A"
+      }
+• Anomaly: ${coinData.tickers?.[0]?.is_anomaly ? "⚠️" : "❌" || "N/A"}
+• Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "❌" || "N/A"}
 
 Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
     `;
@@ -1016,15 +1162,15 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
       const keyboard = {
         inline_keyboard: [
           [
-        { text: "📈 Price Chart", url: chartUrl },
-        { text: "🔍 BSCScan", url: bscscanUrl },
+            { text: "📈 Price Chart", url: chartUrl },
+            { text: "🔍 BSCScan", url: bscscanUrl },
           ],
           [
-        { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
-        {
-          text: "🔎 Analysis",
-          callback_data: `analysis_${tokenAddress}`,
-        },
+            { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
+            {
+              text: "🔎 Analysis",
+              callback_data: `analysis_${tokenAddress}`,
+            },
           ],
         ],
       };
@@ -1032,7 +1178,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
       // Send message with chart image
       await this.bot.sendPhoto(chatId, onchainData.image_url);
       await this.bot.sendMessage(chatId, message, {
-        parse_mode: "HTML"
+        parse_mode: "HTML",
       });
       await this.bot.sendMessage(chatId, marketMessage, {
         parse_mode: "HTML",
@@ -1238,7 +1384,6 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
         topCoinRisk * 0.2,
     };
   }
-
 
   async analyzeTradingOpportunity(symbol, userId) {
     try {
@@ -1830,26 +1975,26 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
   describeFundamentals(fundamentals) {
     if (!fundamentals) return "❌ Insufficient fundamental data";
 
-    const devActivity = 
-      fundamentals.developerActivity > 0.6 
+    const devActivity =
+      fundamentals.developerActivity > 0.6
         ? "💪 strong"
         : fundamentals.developerActivity > 0.3
-          ? "👍 moderate" 
-          : "⚠️ low";
+        ? "👍 moderate"
+        : "⚠️ low";
 
     const marketMaturity =
       fundamentals.marketMaturity > 0.6
         ? "🏛️ mature"
-        : fundamentals.marketMaturity > 0.3 
-          ? "🌱 developing"
-          : "🐣 early stage";
+        : fundamentals.marketMaturity > 0.3
+        ? "🌱 developing"
+        : "🐣 early stage";
 
     const tokenomicsHealth =
       fundamentals.tokenomics > 0.6
         ? "✅ healthy"
         : fundamentals.tokenomics > 0.3
-          ? "⚖️ moderate"
-          : "⚠️ concerning";
+        ? "⚖️ moderate"
+        : "⚠️ concerning";
 
     return `📊 *Fundamental Analysis*:
 
@@ -1865,22 +2010,22 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
       sentiment.community > 0.6
         ? "🔥 very positive"
         : sentiment.community > 0.3
-          ? "👍 positive"
-          : "😐 neutral";
+        ? "👍 positive"
+        : "😐 neutral";
 
     const devConfidence =
       sentiment.developer > 0.6
         ? "⭐ high"
         : sentiment.developer > 0.3
-          ? "👨‍💻 moderate"
-          : "⚠️ low";
+        ? "👨‍💻 moderate"
+        : "⚠️ low";
 
     const publicInterest =
       sentiment.public > 0.6
         ? "📈 strong"
         : sentiment.public > 0.3
-          ? "👥 moderate"
-          : "📉 low";
+        ? "👥 moderate"
+        : "📉 low";
 
     return `🎯 *Market Sentiment*:
 
@@ -2035,43 +2180,78 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
         `• BNB: $${prices.binancecoin.usd}\n` +
         `• SOLANA: $${prices.solana.usd}\n` +
         `• DOGE: $${prices.dogecoin.usd}\n` +
-        `• ADA: $${prices.cardano.usd}\n\n` 
-
+        `• ADA: $${prices.cardano.usd}\n\n`;
 
       const tokenAddress = {
-        "bitcoin": "0x7130d2a12b9bcbfae4f2634d864a1ee1ce3ead9c",
-        "ethereum": "0x2170ed0880ac9a755fd29b2688956bd959f933f8",
-        "ripple": "0x1d2f0da169ceb9fc7b3144628db156f3f6c60dbe",
-        "solana": "0x570a5d26f7765ecb712c0924e4de545b89fd43df",
-        "dogecoin": "0xba2ae424d960c26247dd6c32edc70b295c744c43",
-        "cardano": "0x3ee2200efb3400fabb9aacf31297cbdd1d435d47"
-      }
+        bitcoin: "0x7130d2a12b9bcbfae4f2634d864a1ee1ce3ead9c",
+        ethereum: "0x2170ed0880ac9a755fd29b2688956bd959f933f8",
+        ripple: "0x1d2f0da169ceb9fc7b3144628db156f3f6c60dbe",
+        solana: "0x570a5d26f7765ecb712c0924e4de545b89fd43df",
+        dogecoin: "0xba2ae424d960c26247dd6c32edc70b295c744c43",
+        cardano: "0x3ee2200efb3400fabb9aacf31297cbdd1d435d47",
+      };
 
       const keyboard = {
         inline_keyboard: [
           [
-            { text: "🛒 Buy BTC", callback_data: `swap_execute_${tokenAddress.bitcoin}`},
-            { text: "💰 BTC Analysis", callback_data: `analysis_${tokenAddress.bitcoin}`},
+            {
+              text: "🛒 Buy BTC",
+              callback_data: `swap_execute_${tokenAddress.bitcoin}`,
+            },
+            {
+              text: "💰 BTC Analysis",
+              callback_data: `analysis_${tokenAddress.bitcoin}`,
+            },
           ],
           [
-            { text: "🛒 Buy ETH", callback_data: `swap_execute_${tokenAddress.ethereum}`},
-            { text: "💰 ETH Analysis", callback_data: `analysis_${tokenAddress.ethereum}`},
+            {
+              text: "🛒 Buy ETH",
+              callback_data: `swap_execute_${tokenAddress.ethereum}`,
+            },
+            {
+              text: "💰 ETH Analysis",
+              callback_data: `analysis_${tokenAddress.ethereum}`,
+            },
           ],
           [
-            { text: "🛒 Buy XRP", callback_data: `swap_execute_${tokenAddress.ripple}`},
-            { text: "💰 XRP Analysis", callback_data: `analysis_${tokenAddress.ripple}`},
+            {
+              text: "🛒 Buy XRP",
+              callback_data: `swap_execute_${tokenAddress.ripple}`,
+            },
+            {
+              text: "💰 XRP Analysis",
+              callback_data: `analysis_${tokenAddress.ripple}`,
+            },
           ],
           [
-            { text: "🛒 Buy SOL", callback_data: `swap_execute_${tokenAddress.solana}`},
-            { text: "💰 SOL Analysis", callback_data: `analysis_${tokenAddress.solana}`},
+            {
+              text: "🛒 Buy SOL",
+              callback_data: `swap_execute_${tokenAddress.solana}`,
+            },
+            {
+              text: "💰 SOL Analysis",
+              callback_data: `analysis_${tokenAddress.solana}`,
+            },
           ],
           [
-            { text: "🛒 Buy DOGE", callback_data: `swap_execute_${tokenAddress.dogecoin}`},
-            { text: "💰 DOGE Analysis", callback_data: `analysis_${tokenAddress.dogecoin}`},
+            {
+              text: "🛒 Buy DOGE",
+              callback_data: `swap_execute_${tokenAddress.dogecoin}`,
+            },
+            {
+              text: "💰 DOGE Analysis",
+              callback_data: `analysis_${tokenAddress.dogecoin}`,
+            },
           ],
           [
-            { text: "🛒 Buy ADA", callback_data:  `swap_execute_${tokenAddress.cardano}`},
-            { text: "💰 ADA Analysis", callback_data: `analysis_${tokenAddress.cardano}`},
+            {
+              text: "🛒 Buy ADA",
+              callback_data: `swap_execute_${tokenAddress.cardano}`,
+            },
+            {
+              text: "💰 ADA Analysis",
+              callback_data: `analysis_${tokenAddress.cardano}`,
+            },
           ],
         ],
       };
@@ -2085,31 +2265,31 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
 }
 
 try {
-    // Initialize bots with the same telegram bot instance
-    cryptoBot = new CryptoTradingBot(telegramBot);
-    dodoBot = new TelegramDodoBot(
-        telegramBot,
-        process.env.SUPABASE_URL,
-        process.env.SUPABASE_KEY, 
-        process.env.DODO_API_KEY,
-        process.env.RPC_URL
-    );
-    console.log("Bots initialized successfully");
+  // Initialize bots with the same telegram bot instance
+  cryptoBot = new CryptoTradingBot(telegramBot);
+  dodoBot = new TelegramDodoBot(
+    telegramBot,
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_KEY,
+    process.env.DODO_API_KEY,
+    process.env.RPC_URL
+  );
+  console.log("Bots initialized successfully");
 } catch (error) {
-    console.error("Error initializing bots:", error);
-    process.exit(1);
+  console.error("Error initializing bots:", error);
+  process.exit(1);
 }
 
 // Add cleanup handlers
-process.on('SIGINT', () => {
-    console.log('Received SIGINT. Performing cleanup...');
-    if (telegramBot) {
-        telegramBot.stopPolling();
-    }
-    process.exit(0);
+process.on("SIGINT", () => {
+  console.log("Received SIGINT. Performing cleanup...");
+  if (telegramBot) {
+    telegramBot.stopPolling();
+  }
+  process.exit(0);
 });
 
 app.listen(port, () => {
-    console.log(`Enhanced Trading Bot listening on port ${port}`);
-    console.log("Bot is running with autonomous features...");
+  console.log(`Enhanced Trading Bot listening on port ${port}`);
+  console.log("Bot is running with autonomous features...");
 });
