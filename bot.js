@@ -15,6 +15,7 @@ require("dotenv").config();
 
 const telegramBot = new TelegramBot(process.env.TG_API_KEY, { polling: true });
 let dodoBot;
+let cryptoBot;
 
 class TelegramDodoBot {
 
@@ -378,7 +379,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
   }
 }
 
-class TelegramBot {
+class CryptoTradingBot {
   constructor(telegramBot) {
     this.bot = telegramBot;
     this.setupCore();
@@ -2065,6 +2066,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
 
 try {
     // Initialize bots with the same telegram bot instance
+    cryptoBot = new CryptoTradingBot(telegramBot);
     dodoBot = new TelegramDodoBot(
         telegramBot,
         process.env.SUPABASE_URL,
