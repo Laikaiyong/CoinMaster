@@ -500,6 +500,7 @@ ${analysis.analysis}
 • TVL: $${(coinData.market_data?.total_value_locked || 0)}
 • MCap/TVL: ${coinData.market_data?.mcap_to_tvl_ratio || 'N/A'}
 • FDV/TVL: ${coinData.market_data?.fdv_to_tvl_ratio || 'N/A'}
+• MCap/FDV: ${coinData.market_data?.market_cap_fdv_ratio || 'N/A'}
 
 📈 Price Info:
 • Current: $${coinData.market_data?.current_price?.usd?.toFixed(8) || 0}
@@ -507,13 +508,16 @@ ${analysis.analysis}
 • ATL: $${coinData.market_data?.atl?.usd?.toFixed(8) || 0} (${coinData.market_data?.atl_change_percentage?.usd?.toFixed(2) || 0}%)
 
 📊 Supply:
-• Total: ${(coinData.market_data?.total_supply || 0).toLocaleString()}
-• Max: ${(coinData.market_data?.max_supply || 0).toLocaleString()}
-• Circulating: ${(coinData.market_data?.circulating_supply || 0).toLocaleString()}
+• Total: ${(coinData.market_data?.total_supply || 0)}
+• Max: ${(coinData.market_data?.max_supply || 0)}
+• FDV: $${(coinData.market_data?.fully_diluted_valuation?.usd || 0)}
+• Circulating: ${(coinData.market_data?.circulating_supply || 0)}
 
 📱 Trading Info:
 • Spread: ${coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || 'N/A'}%
 • Trust Score: ${coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || 'N/A'}
+• Anomaly: ${coinData.tickers?.[0]?.is_anomaly ? "⚠️" : "✅" || 'N/A'}
+• Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "✅" || 'N/A'}
 
 Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
     `;
