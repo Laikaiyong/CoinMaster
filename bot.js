@@ -14,6 +14,13 @@ const res = require("express/lib/response");
 require("dotenv").config();
 
 const telegramBot = new TelegramBot(process.env.TG_API_KEY, { polling: true });
+const dodoBot = new TelegramDodoBot(
+  telegramBot,
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY, 
+  process.env.DODO_API_KEY,
+  process.env.RPC_URL
+);
 
 class TelegramDodoBot {
 
@@ -2064,22 +2071,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
 
 app.listen(port, () => {
   console.log(`Enhanced Trading Bot listening on port ${port}`);
-  try {
-      // Initialize bots with the same telegram bot instance
-      let cryptoBot = new CryptoTradingBot(telegramBot);
-      let dodoBot = new TelegramDodoBot(
-          telegramBot,
-          process.env.SUPABASE_URL,
-          process.env.SUPABASE_KEY, 
-          process.env.DODO_API_KEY,
-          process.env.RPC_URL
-      );
-      console.log("Bots initialized successfully");
-    } catch (error) {
-      console.error("Error initializing bots:", error);
-      process.exit(1);
-    }
-  
+
   // Add cleanup handlers
   process.on('SIGINT', () => {
       console.log('Received SIGINT. Performing cleanup...');
