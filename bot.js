@@ -588,7 +588,7 @@ class CryptoTradingBot {
         const apiKey = process.env.BSC_API_KEY;
         const bscScanUrl = `https://api.bscscan.com/api?module=account&action=tokentx&address=${wallet.address}&startblock=0&endblock=999999999&sort=desc&apikey=${apiKey}`;
 
-        let processedTokens = [];
+        let processedTokens;
         let tokenBalances;
         try {
           // Then scan for other tokens using BSCScan API
@@ -2072,7 +2072,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
       const apiKey = process.env.BSC_API_KEY;
       const bscScanningUrl = `https://api.bscscan.com/api?module=account&action=tokentx&address=${wallet.address}&startblock=0&endblock=999999999&sort=desc&apikey=${apiKey}`;
 
-      let processedTokens = [];
+      let processedTokens;
       let tokenBalances;
       try {
         // Then scan for other tokens using BSCScan API
