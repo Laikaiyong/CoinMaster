@@ -511,9 +511,7 @@ ${analysis.analysis}
 • Max: ${(coinData.market_data?.max_supply || 0).toLocaleString()}
 • Circulating: ${(coinData.market_data?.circulating_supply || 0).toLocaleString()}
 
-📱 Trading Info (Binance):
-• Last Price: $${coinData.tickers?.[0]?.last?.toFixed(2) || 'N/A'}
-• 24h Volume: ${coinData.tickers?.[0]?.volume || 'N/A'}
+📱 Trading Info:
 • Spread: ${coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || 'N/A'}%
 • Trust Score: ${coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || 'N/A'}
 
