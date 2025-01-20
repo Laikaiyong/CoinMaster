@@ -237,65 +237,6 @@ class TelegramDodoBot {
       await approveTx.wait();
   }
 
-//   async handlePrice(chatId, tokenAddress) {
-//     try {
-//       // Fetch token info from GeckoTerminal
-//       const onchainData = await this.getOnchainMetrics(tokenAddress);
-
-//       const chartUrl = `https://www.geckoterminal.com/bsc/tokens/${tokenAddress}`;
-//       const bscscanUrl = `https://bscscan.com/token/${tokenAddress}`;
-
-//       const message = `
-//       🪙 <b>${onchainData.name} (${onchainData.symbol})</b>
-
-// 💰 Price: $${onchainData.price}
-// 📊 Change: 
-// • 5m: ${onchainData.priceChange.m5}%
-// • 1h: ${onchainData.priceChange.h1}%
-// • 6h: ${onchainData.priceChange.h6}%
-// • 24h: ${onchainData.priceChange.h24}%
-// 💎 24h Volume: $${onchainData.volume24h.toLocaleString()}
-// 👥 Holders: ${""}
-// 🔄 24h Transactions: 
-// • Buys: ${onchainData.transactions.h24.buys} (${
-//         onchainData.transactions.h24.buyers
-//       } buyers)
-// • Sells: ${onchainData.transactions.h24.sells} (${
-//         onchainData.transactions.h24.sellers
-//       } sellers)
-
-// 🏊‍♂️ Top Liquidity Pool:
-// • Pool: ${onchainData.pool.name}
-// • Address: <code>${onchainData.pool.address}</code>
-//       `;
-
-//       const keyboard = {
-//         inline_keyboard: [
-//           [
-//             { text: "📈 Price Chart", url: chartUrl },
-//             { text: "🔍 BSCScan", url: bscscanUrl },
-//           ],
-//           [
-//             { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
-//             {
-//               text: "💰 Analysis",
-//               callback_data: `analysis_${tokenAddress}`,
-//             },
-//           ],
-//         ],
-//       };
-
-//       // Send message with chart image
-//       await this.bot.sendPhoto(chatId, onchainData.image_url);
-//       await this.bot.sendMessage(chatId, message, {
-//         parse_mode: "HTML",
-//         reply_markup: keyboard,
-//       });
-//     } catch (error) {
-//       console.error("Price fetch error:", error);
-//       await this.bot.sendMessage(chatId, "Error fetching token information");
-//     }
-//   }
 
   async handlePrice(chatId, tokenAddress) {
     try {
@@ -662,11 +603,17 @@ class CryptoTradingBot {
   async sendAnalysis(chatId, tokenAddress, userId) {
     const analysis = await this.analyzeTradingOpportunity(tokenAddress, userId);
     const technical = this.describeTechnicalSignals(analysis.signals.technical);
+    const fundamentals = this.describeFundamentals(analysis.signals.fundamentals);
+    const sentiment = this.describeSentiment(analysis.signals.sentiment);
   
     const tradeMessage = `
   ${technical}
   • Price Change: ${analysis.metrics.priceChange.h24}% (24h)
-  
+
+  ${fundamentals}
+
+  ${sentiment}
+
   📊 Market Metrics:
   • Volume: $${analysis.metrics.volume24h}
   • Liquidity: $${analysis.metrics.liquidityUSD}
@@ -1305,6 +1252,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
     };
   }
 
+
   async analyzeTradingOpportunity(symbol, userId) {
     try {
       // Fetch basic coin data and market conditions
@@ -1330,17 +1278,10 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
         onchain: this.analyzeOnchainMetrics(onchainMetrics), // New analysis
       };
 
-      // Get user's risk profile and LLM analysis
-      const userRiskProfile = await this.getUserRiskProfile(userId);
       const llmAnalysis = await this.getLLMAnalysis(
         coinData,
         signals,
         onchainMetrics // Pass onchain data to LLM
-      );
-
-      const weightedScore = this.calculateWeightedScore(
-        signals,
-        userRiskProfile
       );
 
       return {
@@ -1394,7 +1335,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
         symbol: data.attributes.symbol,
         price: data.attributes.price_usd,
         volume24h: data.attributes.volume_usd.h24,
-        liquidity: data.attributes.liquidity_usd,
+        liquidity: data.attributes.total_reserve_in_usd,
         priceChange: topPool.attributes.price_change_percentage,
         transactions: topPool.attributes.transactions,
         pool: {
@@ -1899,143 +1840,67 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
 • Momentum is showing ${momentumTrend} trend  
 • Volatility level is ${volatilityLevel}`;
   }
-
   describeFundamentals(fundamentals) {
-    if (!fundamentals) return "Insufficient fundamental data";
+    if (!fundamentals) return "❌ Insufficient fundamental data";
 
-    const devActivity =
-      fundamentals.developerActivity > 0.6
-        ? "strong"
+    const devActivity = 
+      fundamentals.developerActivity > 0.6 
+        ? "💪 strong"
         : fundamentals.developerActivity > 0.3
-        ? "moderate"
-        : "low";
+          ? "👍 moderate" 
+          : "⚠️ low";
+
     const marketMaturity =
       fundamentals.marketMaturity > 0.6
-        ? "mature"
-        : fundamentals.marketMaturity > 0.3
-        ? "developing"
-        : "early stage";
+        ? "🏛️ mature"
+        : fundamentals.marketMaturity > 0.3 
+          ? "🌱 developing"
+          : "🐣 early stage";
+
     const tokenomicsHealth =
       fundamentals.tokenomics > 0.6
-        ? "healthy"
+        ? "✅ healthy"
         : fundamentals.tokenomics > 0.3
-        ? "moderate"
-        : "concerning";
+          ? "⚖️ moderate"
+          : "⚠️ concerning";
 
-    return `Developer activity is ${devActivity}, market is ${marketMaturity}, tokenomics are ${tokenomicsHealth}`;
+    return `📊 *Fundamental Analysis*:
+
+• Developer Activity: ${devActivity}
+• Market Maturity: ${marketMaturity} 
+• Tokenomics Health: ${tokenomicsHealth}`;
   }
 
   describeSentiment(sentiment) {
-    if (!sentiment) return "Insufficient sentiment data";
+    if (!sentiment) return "❌ Insufficient sentiment data";
 
     const communityStatus =
       sentiment.community > 0.6
-        ? "very positive"
+        ? "🔥 very positive"
         : sentiment.community > 0.3
-        ? "positive"
-        : "neutral";
+          ? "👍 positive"
+          : "😐 neutral";
+
     const devConfidence =
       sentiment.developer > 0.6
-        ? "high"
+        ? "⭐ high"
         : sentiment.developer > 0.3
-        ? "moderate"
-        : "low";
+          ? "👨‍💻 moderate"
+          : "⚠️ low";
+
     const publicInterest =
       sentiment.public > 0.6
-        ? "strong"
+        ? "📈 strong"
         : sentiment.public > 0.3
-        ? "moderate"
-        : "low";
+          ? "👥 moderate"
+          : "📉 low";
 
-    return `Community sentiment is ${communityStatus}, developer confidence is ${devConfidence}, public interest is ${publicInterest}`;
+    return `🎯 *Market Sentiment*:
+
+• Community Sentiment: ${communityStatus}
+• Developer Confidence: ${devConfidence}
+• Public Interest: ${publicInterest}`;
   }
-
-  updateMarketPatterns(symbol, signals, recommendation) {
-    const pattern = {
-      timestamp: Date.now(),
-      signals,
-      recommendation,
-      outcome: null, // To be updated later when price change is known
-    };
-
-    this.memory.marketPatterns.set(
-      symbol,
-      [...(this.memory.marketPatterns.get(symbol) || []), pattern].slice(-50)
-    ); // Keep last 50 patterns
-  }
-
-//   async handleCallbackQuery(query) {
-//     const chatId = query.message.chat.id;
-
-//     if (query.data.startsWith("trade_")) {
-//       await this.handleTradeCallbacks(query);
-//       return;
-//     }
-
-//     if (query.data === "check_balance") {
-//       await this.handleBalanceCheck(query);
-//       return;
-//     }
-
-//     if (query.data.startsWith("analysis_")) {
-//       const [action, tokenAddress] = query.data.split("_");
-//       const analysis = await this.analyzeTradingOpportunity(
-//         tokenAddress,
-//         chatId
-//       );
-
-//       const tradeMessage = `
-// Trading Analysis for ${analysis.metrics.name}:
-
-// 🔍 Technical Analysis:
-// • RSI: ${
-//   analysis.analysis.technicalSignals
-//     ? analysis.analysis.technicalSignals.value
-//     : "N/A"
-// } (${
-//   analysis.analysis.technicalSignals
-//     ? analysis.analysis.technicalSignals.interpretation
-//     : "N/A"
-// })
-// • Volatility: ${
-//   analysis.analysis.volatility
-//     ? analysis.analysis.volatility + "%"
-//     : "N/A"
-// }
-// • Price Change: ${analysis.metrics.priceChange.h24}% (24h)
-
-// 📊 Market Metrics:
-// • Volume: $${analysis.metrics.volume24h}
-// • Liquidity: $${analysis.metrics.liquidityUSD}
-// • Market Cap: $${analysis.metrics.marketCap}
-//       `;
-
-//       const analysisMessage = `
-// 🤖 AI Analysis:
-// ${analysis.analysis}
-//             `;
-//       const tradeKeyboard = {
-//         inline_keyboard: [
-//           [
-//             { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
-//             {
-//               text: "💰 Analysis",
-//               callback_data: `analysis_${tokenAddress}`,
-//             },
-//           ],
-//           [{ text: "💰 Balance", callback_data: "check_balance" }],
-//         ],
-//       };
-
-//       await this.bot.sendMessage(chatId, tradeMessage, {
-//         parse_mode: "Markdown",
-//       });
-//       await this.bot.sendMessage(chatId, analysisMessage, {
-//         parse_mode: "Markdown",
-//         reply_markup: tradeKeyboard,
-//       });
-//     }
-//   }
 
   async handleBalanceCheck(query) {
     try {
@@ -2232,35 +2097,31 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
   }
 }
 
-let cryptoBot;
-let dodoBot;
-
-try {
-    // Initialize bots with the same telegram bot instance
-    cryptoBot = new CryptoTradingBot(telegramBot);
-    dodoBot = new TelegramDodoBot(
-        telegramBot,
-        process.env.SUPABASE_URL,
-        process.env.SUPABASE_KEY, 
-        process.env.DODO_API_KEY,
-        process.env.RPC_URL
-    );
-    console.log("Bots initialized successfully");
-} catch (error) {
-    console.error("Error initializing bots:", error);
-    process.exit(1);
-}
-
-// Add cleanup handlers
-process.on('SIGINT', () => {
-    console.log('Received SIGINT. Performing cleanup...');
-    if (telegramBot) {
-        telegramBot.stopPolling();
-    }
-    process.exit(0);
-});
-
 app.listen(port, () => {
-    console.log(`Enhanced Trading Bot listening on port ${port}`);
-    console.log("Bot is running with autonomous features...");
+  console.log(`Enhanced Trading Bot listening on port ${port}`);
+  try {
+      // Initialize bots with the same telegram bot instance
+      let cryptoBot = new CryptoTradingBot(telegramBot);
+      let dodoBot = new TelegramDodoBot(
+          telegramBot,
+          process.env.SUPABASE_URL,
+          process.env.SUPABASE_KEY, 
+          process.env.DODO_API_KEY,
+          process.env.RPC_URL
+      );
+      console.log("Bots initialized successfully");
+    } catch (error) {
+      console.error("Error initializing bots:", error);
+      process.exit(1);
+    }
+  
+  // Add cleanup handlers
+  process.on('SIGINT', () => {
+      console.log('Received SIGINT. Performing cleanup...');
+      if (telegramBot) {
+          telegramBot.stopPolling();
+      }
+      process.exit(0);
+  });
+  console.log("Bot is running with autonomous features...");
 });
