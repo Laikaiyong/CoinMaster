@@ -497,7 +497,7 @@ ${analysis.analysis}
 💼 Market Data:
 • Market Cap Rank: #${coinData.market_cap_rank || 'N/A'}
 • Market Cap: $${(coinData.market_data?.market_cap?.usd || 0).toLocaleString()}
-• TVL: $${(coinData.market_data?.total_value_locked || 0)}
+• TVL: $${coinData.market_data?.total_value_locked || 0}
 • MCap/TVL: ${coinData.market_data?.mcap_to_tvl_ratio || 'N/A'}
 • FDV/TVL: ${coinData.market_data?.fdv_to_tvl_ratio || 'N/A'}
 • MCap/FDV: ${coinData.market_data?.market_cap_fdv_ratio || 'N/A'}
