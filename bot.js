@@ -458,6 +458,7 @@ ${analysis.analysis}
     try {
       // Fetch token info from GeckoTerminal
       const onchainData = await this.getOnchainMetrics(tokenAddress);
+      const coinData = await this.indicators.getCoinSentiment(tokenAddress);
 
       // Get price chart image from GeckoTerminal
       const chartUrl = `${`https://www.geckoterminal.com/bsc/tokens/${tokenAddress}`}`;
@@ -469,13 +470,17 @@ ${analysis.analysis}
       🪙 <b>${onchainData.name} (${onchainData.symbol})</b>
 
 💰 Price: $${onchainData.price}
-📊 Change: 
+
+📊 Price Change: 
 • 5m: ${onchainData.priceChange.m5}%
 • 1h: ${onchainData.priceChange.h1}%
 • 6h: ${onchainData.priceChange.h6}%
 • 24h: ${onchainData.priceChange.h24}%
+
 💎 24h Volume: $${onchainData.volume24h.toLocaleString()}
+
 👥 Holders: ${""}
+
 🔄 24h Transactions: 
 • Buys: ${onchainData.transactions.h24.buys} (${
         onchainData.transactions.h24.buyers
@@ -488,26 +493,53 @@ ${analysis.analysis}
 • Pool: ${onchainData.pool.name}
 • Address: <code>${onchainData.pool.address}</code>
       `;
+      const marketMessage = `
+💼 Market Data:
+• Market Cap Rank: #${coinData.market_cap_rank || 'N/A'}
+• Market Cap: $${(coinData.market_data?.market_cap?.usd || 0).toLocaleString()}
+• TVL: $${(coinData.market_data?.total_value_locked || 0).toLocaleString()}
+• MCap/TVL: ${coinData.market_data?.mcap_to_tvl_ratio?.toFixed(2) || 'N/A'}
+• FDV/TVL: ${coinData.market_data?.fdv_to_tvl_ratio?.toFixed(2) || 'N/A'}
+
+📈 Price Info:
+• Current: $${coinData.market_data?.current_price?.usd?.toFixed(8) || 0}
+• ATH: $${coinData.market_data?.ath?.usd?.toFixed(8) || 0} (${coinData.market_data?.ath_change_percentage?.usd?.toFixed(2) || 0}%)
+• ATL: $${coinData.market_data?.atl?.usd?.toFixed(8) || 0} (${coinData.market_data?.atl_change_percentage?.usd?.toFixed(2) || 0}%)
+
+📊 Supply:
+• Total: ${(coinData.market_data?.total_supply || 0).toLocaleString()}
+• Max: ${(coinData.market_data?.max_supply || 0).toLocaleString()}
+• Circulating: ${(coinData.market_data?.circulating_supply || 0).toLocaleString()}
+
+📱 Trading Info (Binance):
+• Last Price: $${coinData.tickers?.[0]?.last?.toFixed(2) || 'N/A'}
+• 24h Volume: ${coinData.tickers?.[0]?.volume || 'N/A'}
+• Spread: ${coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || 'N/A'}%
+• Trust Score: ${coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || 'N/A'}
+
+Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
+    `;
 
       const keyboard = {
         inline_keyboard: [
           [
-            { text: "📈 Price Chart", url: chartUrl },
-            { text: "🔍 BSCScan", url: bscscanUrl },
+        { text: "📈 Price Chart", url: chartUrl },
+        { text: "🔍 BSCScan", url: bscscanUrl },
           ],
           [
-            { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
-            {
-              text: "🔎 Analysis",
-              callback_data: `analysis_${tokenAddress}`,
-            },
+        { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
+        {
+          text: "🔎 Analysis",
+          callback_data: `analysis_${tokenAddress}`,
+        },
           ],
         ],
       };
 
       // Send message with chart image
       await this.bot.sendPhoto(chatId, onchainData.image_url);
-      await this.bot.sendMessage(chatId, message, {
+      await this.bot.sendMessage(chatId, message);
+      await this.bot.sendMessage(chatId, marketMessage, {
         parse_mode: "HTML",
         reply_markup: keyboard,
       });
