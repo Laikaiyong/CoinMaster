@@ -911,16 +911,26 @@ class CryptoTradingBot {
               );
               return;
             }
-
-            const walletInfo =
+            const walletInfo = 
               `⚙️ <b>Wallet Settings</b>\n\n` +
               `Address: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>\n` +
               `Private Key: <code>${wallet.private_key}</code> <a href="tg://copy/${wallet.private_key}">📋</a>\n` +
-              `⚠️ Never share your private key with anyone!`;
+              `⚠️ Never share your private key with anyone!\n\n` +
+              `This message will self-destruct in 30 seconds for security.`;
 
-            await this.bot.sendMessage(query.message.chat.id, walletInfo, {
-              parse_mode: "HTML",
+            // Send message and get message object back
+            const sentMessage = await this.bot.sendMessage(query.message.chat.id, walletInfo, {
+              parse_mode: "HTML"
             });
+
+            // Delete message after 30 seconds
+            setTimeout(async () => {
+              try {
+                await this.bot.deleteMessage(query.message.chat.id, sentMessage.message_id);
+              } catch (error) {
+                console.error('Error deleting message:', error);
+              }
+            }, 30000); // 30 seconds
             break;
         }
       }
