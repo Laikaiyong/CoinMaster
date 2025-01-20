@@ -583,50 +583,9 @@ class CryptoTradingBot {
         const balance = await this.web3.eth.getBalance(wallet.address);
         const balanceInBNB = this.web3.utils.fromWei(balance, "ether");
 
-        // Get token transfers to find all tokens in wallet
-        const apiKey = process.env.BSC_API_KEY;
-        const bscScanningUrl = `https://api.bscscan.com/api?module=account&action=tokentx&address=${wallet.address}&startblock=0&endblock=999999999&sort=desc&apikey=${apiKey}`;
-
-        let processedTokens = new Set();
-        let tokenBalances = '';
-        try {
-          const response = await fetch(bscScanningUrl);
-          const data = await response.json();
-
-          if (data.status === "1" && data.result) {
-            processedTokens = new Set();
-            tokenBalances = '';
-            
-            for (const tx of data.result) {
-              const tokenAddress = tx.contractAddress.toLowerCase();
-              
-              // Skip if already processed
-              if (processedTokens.has(tokenAddress)) continue;
-
-              // Get token balance
-              const balanceUrl = `https://api.bscscan.com/api?module=account&action=tokenbalance&contractaddress=${tokenAddress}&address=${wallet.address}&tag=latest&apikey=${apiKey}`;
-              const balanceResponse = await fetch(balanceUrl);
-              const balanceData = await balanceResponse.json();
-
-              if (balanceData.status === "1") {
-                const balance = parseFloat(balanceData.result) / Math.pow(10, parseInt(tx.tokenDecimal));
-                
-                if (balance > 0) {
-                  tokenBalances += `${tx.tokenSymbol} | <code>${tokenAddress}</code> <a href="tg://copy/${tokenAddress}">📋</a> | ${balance.toFixed(4)}\n`;
-                }
-                processedTokens.add(tokenAddress);
-              }
-            }
-          }
-        } catch (error) {
-          console.error("Error scanning wallet:", error);
-          tokenBalances = "Error fetching token balances";
-        }
-
         const message =
           `💰 Wallet Balance \n` +
-          `BNB | ${parseFloat(balanceInBNB).toFixed(4)}\n` +
-          (tokenBalances ? `\n🪙 Token Balances:\n${tokenBalances}` : "");
+          `BNB Balance: ${parseFloat(balanceInBNB).toFixed(4)} BNB\n`;
 
         let welcomeMessage = `Welcome to CoinMaster! 🚀\n\n`;
         welcomeMessage += `Your Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>\n\n`;
@@ -2107,7 +2066,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
       };
 
       await this.bot.sendMessage(query.message.chat.id, message, {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         reply_markup: keyboard,
       });
     } catch (error) {
