@@ -583,14 +583,14 @@ class CryptoTradingBot {
         const balance = await this.web3.eth.getBalance(wallet.address);
         const balanceInBNB = this.web3.utils.fromWei(balance, "ether");
 
-
         // Get token transfers to find all tokens in wallet
         const apiKey = process.env.BSC_API_KEY;
+        const bscScanningUrl = `https://api.bscscan.com/api?module=account&action=tokentx&address=${wallet.address}&startblock=0&endblock=999999999&sort=desc&apikey=${apiKey}`;
 
         let processedTokens = new Set();
         let tokenBalances = '';
         try {
-          const response = await fetch(bscScanUrl);
+          const response = await fetch(bscScanningUrl);
           const data = await response.json();
 
           if (data.status === "1" && data.result) {
@@ -2057,14 +2057,14 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
         // Get BNB balance
         const balance = await this.web3.eth.getBalance(wallet.address);
         const balanceInBNB = this.web3.utils.fromWei(balance, "ether");
-
-
+        
         // Get token transfers to find all tokens in wallet
         const apiKey = process.env.BSC_API_KEY;
+        const bscScanningUrl = `https://api.bscscan.com/api?module=account&action=tokentx&address=${wallet.address}&startblock=0&endblock=999999999&sort=desc&apikey=${apiKey}`;
         let processedTokens = new Set();
         let tokenBalances = '';
         try {
-          const response = await fetch(bscScanUrl);
+          const response = await fetch(bscScanningUrl);
           const data = await response.json();
 
           if (data.status === "1" && data.result) {
