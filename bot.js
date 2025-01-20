@@ -24,6 +24,79 @@ class TelegramDodoBot {
       this.apiKey = apiKey;
       this.dodoAPI = "https://api.dodoex.io/route-service/developer/swap";
       this.rpcProvider = new ethers.JsonRpcProvider(rpcUrl);
+      this.setupPerception();
+  }
+
+  setupPerception() {
+    this.indicators = {
+      getCoinSentiment: async (contractAddress) => {
+        try {
+          // First fetch the coin list to find the id
+          const coinListResponse = await fetch(
+            `https://api.coingecko.com/api/v3/coins/list?include_platform=true&x_cg_demo_api_key=${process.env.CG_API_KEY}`
+          );
+          const coinList = await coinListResponse.json();
+
+          // Find the coin with matching BSC contract address
+          // const coin = coinList.find(
+          //   (coin) =>
+          //     coin.platforms &&
+          //     coin.platforms["binance-smart-chain"] &&
+          //     coin.platforms["binance-smart-chain"].toLowerCase() ===
+          //       contractAddress.toLowerCase()
+          // );
+
+          const coin = coinList.find((coin) => {
+            try {
+                // Check if coin and platforms exist
+                if (!coin || !coin.platforms || !coin.platforms["binance-smart-chain"]) {
+                    return false;
+                }
+        
+                // Ensure both addresses are strings and normalize them
+                const platformAddress = String(coin.platforms["binance-smart-chain"]).toLowerCase();
+                const searchAddress = String(contractAddress).toLowerCase();
+        
+                return platformAddress === searchAddress;
+            } catch (error) {
+                console.error("Error comparing addresses:", error);
+                return false;
+            }
+          });
+
+          if (!coin) {
+            console.error(
+              "Coin not found for contract address:",
+              contractAddress
+            );
+            return null;
+          }
+
+          // Fetch detailed coin data using the found coin id
+          const response = await fetch(
+            `https://api.coingecko.com/api/v3/coins/${coin.id}?x_cg_demo_api_key=${process.env.CG_API_KEY}&tickers=true&market_data=true&community_data=true&developer_data=true&sparkline=true`
+          );
+          const data = await response.json();
+          return data;
+        } catch (error) {
+          console.error("Coin sentiment fetch error:", error);
+          return null;
+        }
+      },
+
+      getGlobalMetrics: async () => {
+        try {
+          const response = await fetch(
+            "https://api.coingecko.com/api/v3/global/decentralized_finance_defi?x_cg_demo_api_key=${process.env.CG_API_KEY}"
+          );
+          const data = await response.json();
+          return data;
+        } catch (error) {
+          console.error("Global DeFi metrics fetch error:", error);
+          return null;
+        }
+      },
+    };
   }
 
   async getUserPrivateKey(userId) {
@@ -164,25 +237,93 @@ class TelegramDodoBot {
       await approveTx.wait();
   }
 
+//   async handlePrice(chatId, tokenAddress) {
+//     try {
+//       // Fetch token info from GeckoTerminal
+//       const onchainData = await this.getOnchainMetrics(tokenAddress);
+
+//       const chartUrl = `https://www.geckoterminal.com/bsc/tokens/${tokenAddress}`;
+//       const bscscanUrl = `https://bscscan.com/token/${tokenAddress}`;
+
+//       const message = `
+//       🪙 <b>${onchainData.name} (${onchainData.symbol})</b>
+
+// 💰 Price: $${onchainData.price}
+// 📊 Change: 
+// • 5m: ${onchainData.priceChange.m5}%
+// • 1h: ${onchainData.priceChange.h1}%
+// • 6h: ${onchainData.priceChange.h6}%
+// • 24h: ${onchainData.priceChange.h24}%
+// 💎 24h Volume: $${onchainData.volume24h.toLocaleString()}
+// 👥 Holders: ${""}
+// 🔄 24h Transactions: 
+// • Buys: ${onchainData.transactions.h24.buys} (${
+//         onchainData.transactions.h24.buyers
+//       } buyers)
+// • Sells: ${onchainData.transactions.h24.sells} (${
+//         onchainData.transactions.h24.sellers
+//       } sellers)
+
+// 🏊‍♂️ Top Liquidity Pool:
+// • Pool: ${onchainData.pool.name}
+// • Address: <code>${onchainData.pool.address}</code>
+//       `;
+
+//       const keyboard = {
+//         inline_keyboard: [
+//           [
+//             { text: "📈 Price Chart", url: chartUrl },
+//             { text: "🔍 BSCScan", url: bscscanUrl },
+//           ],
+//           [
+//             { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
+//             {
+//               text: "💰 Analysis",
+//               callback_data: `analysis_${tokenAddress}`,
+//             },
+//           ],
+//         ],
+//       };
+
+//       // Send message with chart image
+//       await this.bot.sendPhoto(chatId, onchainData.image_url);
+//       await this.bot.sendMessage(chatId, message, {
+//         parse_mode: "HTML",
+//         reply_markup: keyboard,
+//       });
+//     } catch (error) {
+//       console.error("Price fetch error:", error);
+//       await this.bot.sendMessage(chatId, "Error fetching token information");
+//     }
+//   }
+
   async handlePrice(chatId, tokenAddress) {
     try {
       // Fetch token info from GeckoTerminal
       const onchainData = await this.getOnchainMetrics(tokenAddress);
+      const coinData = await this.indicators.getCoinSentiment(tokenAddress);
 
-      const chartUrl = `https://www.geckoterminal.com/bsc/tokens/${tokenAddress}`;
+      // Get price chart image from GeckoTerminal
+      const chartUrl = `${`https://www.geckoterminal.com/bsc/tokens/${tokenAddress}`}`;
+
+      // Get BSCScan preview
       const bscscanUrl = `https://bscscan.com/token/${tokenAddress}`;
 
       const message = `
       🪙 <b>${onchainData.name} (${onchainData.symbol})</b>
 
 💰 Price: $${onchainData.price}
-📊 Change: 
+
+📊 Price Change: 
 • 5m: ${onchainData.priceChange.m5}%
 • 1h: ${onchainData.priceChange.h1}%
 • 6h: ${onchainData.priceChange.h6}%
 • 24h: ${onchainData.priceChange.h24}%
+
 💎 24h Volume: $${onchainData.volume24h.toLocaleString()}
+
 👥 Holders: ${""}
+
 🔄 24h Transactions: 
 • Buys: ${onchainData.transactions.h24.buys} (${
         onchainData.transactions.h24.buyers
@@ -195,6 +336,34 @@ class TelegramDodoBot {
 • Pool: ${onchainData.pool.name}
 • Address: <code>${onchainData.pool.address}</code>
       `;
+      const marketMessage = `
+💼 Market Data:
+• Market Cap Rank: #${coinData.market_cap_rank || 'N/A'}
+• Market Cap: $${(coinData.market_data?.market_cap?.usd || 0).toLocaleString()}
+• TVL: $${coinData.market_data?.total_value_locked || 0}
+• MCap/TVL: ${coinData.market_data?.mcap_to_tvl_ratio || 'N/A'}
+• FDV/TVL: ${coinData.market_data?.fdv_to_tvl_ratio || 'N/A'}
+• MCap/FDV: ${coinData.market_data?.market_cap_fdv_ratio || 'N/A'}
+
+📈 Price Info:
+• Current: $${coinData.market_data?.current_price?.usd?.toFixed(8) || 0}
+• ATH: $${coinData.market_data?.ath?.usd?.toFixed(8) || 0} (${coinData.market_data?.ath_change_percentage?.usd?.toFixed(2) || 0}%)
+• ATL: $${coinData.market_data?.atl?.usd?.toFixed(8) || 0} (${coinData.market_data?.atl_change_percentage?.usd?.toFixed(2) || 0}%)
+
+📊 Supply:
+• Total: ${(coinData.market_data?.total_supply || 0)}
+• Max: ${(coinData.market_data?.max_supply || 0)}
+• FDV: $${(coinData.market_data?.fully_diluted_valuation?.usd || 0)}
+• Circulating: ${(coinData.market_data?.circulating_supply || 0)}
+
+📱 Trading Info:
+• Spread: ${coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || 'N/A'}%
+• Trust Score: ${coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || 'N/A'}
+• Anomaly: ${coinData.tickers?.[0]?.is_anomaly ? "⚠️" : "✅" || 'N/A'}
+• Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "✅" || 'N/A'}
+
+Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
+    `;
 
       const keyboard = {
         inline_keyboard: [
@@ -215,6 +384,9 @@ class TelegramDodoBot {
       // Send message with chart image
       await this.bot.sendPhoto(chatId, onchainData.image_url);
       await this.bot.sendMessage(chatId, message, {
+        parse_mode: "HTML"
+      });
+      await this.bot.sendMessage(chatId, marketMessage, {
         parse_mode: "HTML",
         reply_markup: keyboard,
       });
@@ -223,6 +395,7 @@ class TelegramDodoBot {
       await this.bot.sendMessage(chatId, "Error fetching token information");
     }
   }
+
 
   async getOnchainMetrics(tokenAddress) {
     try {
@@ -394,371 +567,299 @@ class CryptoTradingBot {
   }
 
   setupHandlers() {
+    // Start command handler
     this.bot.onText(/\/start/, async (msg) => {
-      let { data: wallet } = await this.supabase
-        .from("wallets")
-        .select("*")
-        .eq("user_id", msg.from.id)
-        .single();
-
-      if (!wallet || !wallet.address) {
-        const account = this.web3.eth.accounts.create();
-        const { data, error } = await this.supabase
+      try {
+        let { data: wallet } = await this.supabase
           .from("wallets")
-          .insert([
-            {
-              user_id: msg.from.id,
-              address: account.address,
-              private_key: account.privateKey,
-            },
-          ])
-          .select()
+          .select("*")
+          .eq("user_id", msg.from.id)
           .single();
-
-        if (error) {
-          console.error("Error creating wallet:", error);
-          return;
+  
+        if (!wallet || !wallet.address) {
+          const account = this.web3.eth.accounts.create();
+          const { data, error } = await this.supabase
+            .from("wallets")
+            .insert([
+              {
+                user_id: msg.from.id,
+                address: account.address,
+                private_key: account.privateKey,
+              },
+            ])
+            .select()
+            .single();
+  
+          if (error) {
+            console.error("Error creating wallet:", error);
+            return;
+          }
+          wallet = data;
         }
-        wallet = data;
+  
+        // Get BNB balance
+        const balance = await this.web3.eth.getBalance(wallet.address);
+        const balanceInBNB = this.web3.utils.fromWei(balance, "ether");
+  
+        const message = `💰 Wallet Balance \n` +
+          `BNB Balance: ${parseFloat(balanceInBNB).toFixed(4)} BNB\n\n`;
+  
+        let welcomeMessage = `Welcome to CoinMaster! 🚀\n\n`;
+        welcomeMessage += `Your Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>\n\n`;
+        welcomeMessage += message;
+        welcomeMessage += `\nI can help you with:\n📊 Trading Analysis & Strategies\n💹 Market Analysis\n`;
+  
+        const keyboard = {
+          inline_keyboard: [
+            [
+              { text: "🛒 Buy", callback_data: "buy" },
+              { text: "🤑 Sell", callback_data: "sell" },
+              { text: "💰 Check Balance", callback_data: "check_balance" }
+            ],
+            [
+              { text: "📈 Price", callback_data: "price" },
+              { text: "📊 Trending", callback_data: "trending" }
+            ],
+            [
+              { text: "🤝 Help", callback_data: "help" },
+              { text: "⚙️ Settings", callback_data: "settings" }
+            ]
+          ]
+        };
+  
+        await this.bot.sendMessage(msg.chat.id, welcomeMessage, {
+          parse_mode: "HTML",
+          reply_markup: keyboard
+        });
+      } catch (error) {
+        console.error("Error in start command:", error);
+        await this.bot.sendMessage(msg.chat.id, "❌ An error occurred while setting up your wallet.");
       }
-
-      // Get BNB balance
-      const balance = await this.web3.eth.getBalance(wallet.address);
-      const balanceInBNB = this.web3.utils.fromWei(balance, "ether");
-
-      const message =
-        `💰 Wallet Balance \n` +
-        `BNB Balance: ${parseFloat(balanceInBNB).toFixed(4)} BNB\n\n`;
-
-      let balanceMessage = `BNB: ${wallet.balance}\n\n`;
-
-      let welcomeMessage = `Welcome to CoinMaster! 🚀\n\n`;
-      welcomeMessage += `Your Wallet: <code>${wallet.address}</code> <a href="tg://copy/${wallet.address}">📋</a>\n\n`;
-      welcomeMessage += message;
-      welcomeMessage += `\nI can help you with:
-📊 Trading Analysis & Strategies
-💹 Market Analysis
-`;
-
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: "🛒 Buy", callback_data: "buy" },
-            { text: "🤑 Sell", callback_data: "sell" },
-            { text: "💰 Check Balance", callback_data: "check_balance" },
-            
-            
-          ],
-          [ 
-            { text: "📈 Price", callback_data: "price" },
-            { text: "📊 Trending", callback_data: "trending" },
-          ],
-
-          [ 
-            { text: "🤝 Help", callback_data: "help" },
-            { text: "⚙️ Settings", callback_data: "settings" },
-          ],
-        ],
-      };
-
-      this.bot.sendMessage(msg.chat.id, welcomeMessage, {
-        parse_mode: "HTML",
-        reply_markup: keyboard,
-      });
     });
-
-    this.bot.onText(/\/buy/, async (msg) => {
-      const sentMessage = await this.bot.sendMessage(
-        msg.chat.id,
-        "Enter the token contract address you want to buy (Eg: 0x...dac):",
-        { reply_markup: { force_reply: true } }
-      );
-
-      this.bot.onReplyToMessage(
-        sentMessage.chat.id,
-        sentMessage.message_id,
-        async (reply) => {
-          const tokenAddress = reply.text;
-
-          await this.handlePrice(reply.chat.id, tokenAddress);
-        }
-      );
-    });
-
-    this.bot.onText(/\/help/, async (msg, match) => {
-      const helpMessage = `
-🤖 *CoinMaster Bot Commands*
-
-📈 *Price & Market Commands*
-/general - View major crypto prices (BTC, ETH, BNB)
-/token - View trending tokens on BSC
-/pool - View trending liquidity pools
-/trade [address] - View detailed token info & trading options
-Example: /trade 0x4ea98c1999575aaadfb38237dd015c5e773f75a2
-
-📊 *Analysis Commands*
-/analysis [address] - Get AI-powered trading analysis
-Example: /analysis 0x4ea98c1999575aaadfb38237dd015c5e773f75a2
-
-🔄 *Wallet Commands*
-/start - Create/view your wallet
-
-Need more help? Contact @admin`;
-
-      await this.bot.sendMessage(msg.chat.id, helpMessage, {
-        parse_mode: "Markdown",
-        disable_web_page_preview: true,
-      });
-    });
-
-    this.bot.onText(/\/general/, async (msg, match) => {
-      await this.sendPriceMenu(msg.chat.id);
-    });
-
-    // Trending Token
-    this.bot.onText(/\/token/, async (msg, match) => {
-      await this.sendTrending(msg.chat.id);
-    });
-
-    // Trending Pool
-    this.bot.onText(/\/pool/, async (msg, match) => {
-      await this.sendPool(msg.chat.id);
-    });
-
-    this.bot.onText(/\/trade (.+)/, async (msg, match) => {
-      const tokenAddress = match[1];
-      await this.handlePrice(msg.chat.id, tokenAddress);
-    });
-
-    this.bot.onText(/\/order (.+)/, async (msg, match) => {
-      const tokenAddress = match[1];
-      await this.handleOrder(msg.chat.id, tokenAddress);
-    });
-
-    // Usage in command handler
+  
+    // Analysis command handler
     this.bot.onText(/\/analysis (.+)/, async (msg, match) => {
       const tokenAddress = match[1];
       await this.sendAnalysis(msg.chat.id, tokenAddress, msg.from.id);
     });
-
-    this.bot.on("callback_query", this.handleCallbackQuery.bind(this));
+    
+    // this.bot.onText(/\/trade/ (.+)/, async (msg, match) => {
+    //   const tokenAddress = match[1];
+    //   await this.handleTradeCallbacks(query);
+    // });
+  
+    // Bind the callback query handler correctly
+    this.bot.on("callback_query", async (query) => {
+      try {
+        await this.handleCallbackQuery(query);
+      } catch (error) {
+        console.error("Error in callback query handler:", error);
+        await this.bot.sendMessage(query.message.chat.id, "❌ An error occurred while processing your request.");
+      }
+    });
   }
 
   async sendAnalysis(chatId, tokenAddress, userId) {
     const analysis = await this.analyzeTradingOpportunity(tokenAddress, userId);
     const technical = this.describeTechnicalSignals(analysis.signals.technical);
-
+  
     const tradeMessage = `
-${technical}
-• Price Change: ${analysis.metrics.priceChange.h24}% (24h)
-
-📊 Market Metrics:
-• Volume: $${analysis.metrics.volume24h}
-• Liquidity: $${analysis.metrics.liquidityUSD}
-• Market Cap: $${analysis.metrics.marketCap}
-`;
-      const analysisMessage = `
-
+  ${technical}
+  • Price Change: ${analysis.metrics.priceChange.h24}% (24h)
+  
+  📊 Market Metrics:
+  • Volume: $${analysis.metrics.volume24h}
+  • Liquidity: $${analysis.metrics.liquidityUSD}
+  • Market Cap: $${analysis.metrics.marketCap}
+  `;
+  
     const analysisMessage = `
-🤖 AI Analysis:
-${analysis.analysis}
+  🤖 AI Analysis:
+  ${analysis.analysis}
     `;
-
+  
     const tradeKeyboard = {
       inline_keyboard: [
         [
-          { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
+          { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
           { text: "🔎 Analysis", callback_data: `analysis_${tokenAddress}` },
         ],
         [{ text: "💰 Check Balance", callback_data: "check_balance" }],
       ],
     };
-
-      await this.bot.sendMessage(msg.chat.id, tradeMessage, {
-        parse_mode: "Markdown",
-      });
-      await this.bot.sendMessage(msg.chat.id, analysisMessage, {
-        parse_mode: "Markdown",
-        reply_markup: tradeKeyboard,
-      });
+  
+    await this.bot.sendMessage(chatId, tradeMessage, {
+      parse_mode: "Markdown",
     });
-
-    this.bot.on("callback_query", async (query) => {
-      const chatId = query.message.chat.id;
-      try {
-        this.bot.answerCallbackQuery(query.id);
-        if (query.data.startsWith('swap_execute_')) {
-          const tokenAddress = query.data.replace('swap_execute_', '');
-          try {
-              const amountMessage = await this.bot.sendMessage(
-                  chatId,
-                  'Enter the amount of BNB you want to spend:',
-                  { reply_markup: { force_reply: true } }
-              );
-
-              const amountHandler = async (amountReply) => {
-                  try {
-                      this.bot.removeReplyListener(amountHandler);
-                      const amount = parseFloat(amountReply.text);
-                      if (isNaN(amount)) {
-                          await this.bot.sendMessage(amountReply.chat.id, '❌ Invalid amount. Please enter a valid number.');
-                          return;
-                      }
-                      await dodoBot.handleBuyCommand(amountReply.chat.id, amountReply.from.id, tokenAddress, amount);
-                  } catch (error) {
-                      console.error('Error processing amount:', error);
-                      await this.bot.sendMessage(amountReply.chat.id, '❌ Error processing the amount. Please try again.');
-                  }
-              };
-
-              this.bot.onReplyToMessage(amountMessage.chat.id, amountMessage.message_id, amountHandler);
-          } catch (error) {
-              console.error('Error in swap execution:', error);
-              await this.bot.sendMessage(chatId, '❌ An error occurred while processing your request.');
-          }
-        } else if (query.data.startsWith('analysis_')) {
-          const tokenAddress = query.data.replace('analysis_', '');
-          // console.log('Analysis token:', tokenAddress);
-          const analysis = await this.analyzeTradingOpportunity(
-            tokenAddress,
-            query.from.id
-          );
-          // console.log('Analysis:', analysis);
-    
-          const tradeMessage = `
-Trading Analysis for $*${analysis.metrics.name}*:
-
-*🔍 Technical Analysis*:
-• RSI: ${
-        analysis.analysis.technicalSignals
-          ? analysis.analysis.technicalSignals.value
-          : "N/A"
-      } (${
-        analysis.analysis.technicalSignals
-          ? analysis.analysis.technicalSignals.interpretation
-          : "N/A"
-      })
-• Volatility: ${
-        analysis.analysis.volatility
-          ? analysis.analysis.volatility + "%"
-          : "N/A"
-      }
-• Price Change: ${analysis.metrics.priceChange.h24}% (24h)
-
-*📊 Market Metrics*:
-• Volume: $${analysis.metrics.volume24h}
-• Liquidity: $${analysis.metrics.liquidityUSD}
-• Market Cap: $${analysis.metrics.marketCap}
-      `;
-          const analysisMessage = `
-*🤖 AI Analysis*:
-${analysis.analysis}
-      `;
-          const tradeKeyboard = {
-            inline_keyboard: [
-              [
-                { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
-              ],
-            ],
-          };
-    
-          await this.bot.sendMessage(chatId, tradeMessage, {
-            parse_mode: "Markdown",
-          });
-          await this.bot.sendMessage(chatId, analysisMessage, {
-            parse_mode: "Markdown",
-            reply_markup: tradeKeyboard,
-          });
-        
-        } else {
-          // Handle other menu items
-          switch (query.data) {
-              case "buy":
-                  try {
-                      const sentMessage = await this.bot.sendMessage(
-                          chatId,
-                          'Enter the token contract address you want to buy (Eg: 0x...dac):',
-                          { reply_markup: { force_reply: true } }
-                      );
-
-                      const addressHandler = async (addressReply) => {
-                          try {
-                              this.bot.removeReplyListener(addressHandler);
-
-                              if (!addressReply.text) {
-                                  await this.bot.sendMessage(addressReply.chat.id, 'Invalid input. Please provide a valid contract address.');
-                                  return;
-                              }
-
-                              const tokenAddress = addressReply.text;
-
-                              if (!ethers.isAddress(tokenAddress)) {
-                                  await this.bot.sendMessage(addressReply.chat.id, '❌ Invalid token address format. Please provide a valid address.');
-                                  return;
-                              }
-
-                              await dodoBot.handlePrice(addressReply.chat.id, tokenAddress);
-                          } catch (error) {
-                              console.error('Error in buy handler:', error);
-                              await this.bot.sendMessage(addressReply.chat.id, '❌ An error occurred while processing your request.');
-                          }
-                      };
-
-                      this.bot.onReplyToMessage(sentMessage.chat.id, sentMessage.message_id, addressHandler);
-                  } catch (error) {
-                      console.error('Error in buy command:', error);
-                      await this.bot.sendMessage(chatId, '❌ An error occurred while processing your request.');
-                  }
-                  break;
-
-              case "sell":
-                  await this.bot.sendMessage(chatId, "Enter the token contract address you want to sell (Eg: 0x...dac):", 
-                      { reply_markup: { force_reply: true } });
-                  break;
-
-              case "check_balance":
-                  await this.bot.sendMessage(chatId, "Test");
-                  break;
-
-              case "price":
-                  await this.sendPriceMenu(chatId);
-                  break;
-
-              case "trending":
-                  await this.sendPool(chatId);
-                  break;
-              case "help":
-                const helpMessage = `
-🔄 *Wallet Commands*
-/start - Create or view your wallet
-
-*Menu*
-🛒 Buy - Buy any token on BNB Chain
-🤑 Sell - Sell any token you bought
-💰 Balance - Check current holdings of your wallet
-📈 Price - Check the current price
-📊 Trending - Find trending coins and pools on BNB Chain 
-🤝 Help - A helpful guide on CoinMaster 
-⚙️ Settings - Check your wallet settings here
-                  `;
-    
-                await this.bot.sendMessage(chatId, helpMessage, {
-                  parse_mode: "Markdown",
-                  disable_web_page_preview: true
-                });
-                break
-              case "settings":
-                await this.bot.sendMessage(chatId, "Test" );
-                break
-          }
-        } 
-      } catch (error) {
-        // console.error('Callback query error:', error);
-        await this.bot.sendMessage(chatId, "Error processing your request");
-      }
+    await this.bot.sendMessage(chatId, analysisMessage, {
+      parse_mode: "Markdown",
+      reply_markup: tradeKeyboard,
     });
   }
+  
 
+  async handleCallbackQuery(query) {
+    const chatId = query.message.chat.id;
+    try {
+      this.bot.answerCallbackQuery(query.id);
+      
+      if (query.data.startsWith('swap_execute_')) {
+        const tokenAddress = query.data.replace('swap_execute_', '');
+        try {
+          const amountMessage = await this.bot.sendMessage(
+            chatId,
+            'Enter the amount of BNB you want to spend:',
+            { reply_markup: { force_reply: true } }
+          );
+  
+          const amountHandler = async (amountReply) => {
+            try {
+              this.bot.removeReplyListener(amountHandler);
+              const amount = parseFloat(amountReply.text);
+              if (isNaN(amount)) {
+                await this.bot.sendMessage(amountReply.chat.id, '❌ Invalid amount. Please enter a valid number.');
+                return;
+              }
+              await dodoBot.handleBuyCommand(amountReply.chat.id, amountReply.from.id, tokenAddress, amount);
+            } catch (error) {
+              console.error('Error processing amount:', error);
+              await this.bot.sendMessage(amountReply.chat.id, '❌ Error processing the amount. Please try again.');
+            }
+          };
+  
+          this.bot.onReplyToMessage(amountMessage.chat.id, amountMessage.message_id, amountHandler);
+        } catch (error) {
+          console.error('Error in swap execution:', error);
+          await this.bot.sendMessage(chatId, '❌ An error occurred while processing your request.');
+        }
+      } else if (query.data.startsWith('analysis_')) {
+        const tokenAddress = query.data.replace('analysis_', '');
+        const analysis = await this.analyzeTradingOpportunity(tokenAddress, query.from.id);
+  
+        const tradeMessage = `
+  Trading Analysis for $*${analysis.metrics.name}*:
+  
+  *🔍 Technical Analysis*:
+  • RSI: ${analysis.analysis.technicalSignals ? analysis.analysis.technicalSignals.value : "N/A"} (${analysis.analysis.technicalSignals ? analysis.analysis.technicalSignals.interpretation : "N/A"})
+  • Volatility: ${analysis.analysis.volatility ? analysis.analysis.volatility + "%" : "N/A"}
+  • Price Change: ${analysis.metrics.priceChange.h24}% (24h)
+  
+  *📊 Market Metrics*:
+  • Volume: $${analysis.metrics.volume24h}
+  • Liquidity: $${analysis.metrics.liquidityUSD}
+  • Market Cap: $${analysis.metrics.marketCap}
+        `;
+  
+        const analysisMessage = `
+  *🤖 AI Analysis*:
+  ${analysis.analysis}
+        `;
+  
+        const tradeKeyboard = {
+          inline_keyboard: [
+            [
+              { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
+            ],
+          ],
+        };
+  
+        await this.bot.sendMessage(chatId, tradeMessage, {
+          parse_mode: "Markdown",
+        });
+        await this.bot.sendMessage(chatId, analysisMessage, {
+          parse_mode: "Markdown",
+          reply_markup: tradeKeyboard,
+        });
+      } else {
+        // Handle other menu items
+        switch (query.data) {
+          case "buy":
+            try {
+              const sentMessage = await this.bot.sendMessage(
+                chatId,
+                'Enter the token contract address you want to buy (Eg: 0x...dac):',
+                { reply_markup: { force_reply: true } }
+              );
+  
+              const addressHandler = async (addressReply) => {
+                try {
+                  this.bot.removeReplyListener(addressHandler);
+  
+                  if (!addressReply.text) {
+                    await this.bot.sendMessage(addressReply.chat.id, 'Invalid input. Please provide a valid contract address.');
+                    return;
+                  }
+  
+                  const tokenAddress = addressReply.text;
+  
+                  if (!ethers.isAddress(tokenAddress)) {
+                    await this.bot.sendMessage(addressReply.chat.id, '❌ Invalid token address format. Please provide a valid address.');
+                    return;
+                  }
+  
+                  await dodoBot.handlePrice(addressReply.chat.id, tokenAddress);
+                } catch (error) {
+                  console.error('Error in buy handler:', error);
+                  await this.bot.sendMessage(addressReply.chat.id, '❌ An error occurred while processing your request.');
+                }
+              };
+  
+              this.bot.onReplyToMessage(sentMessage.chat.id, sentMessage.message_id, addressHandler);
+            } catch (error) {
+              console.error('Error in buy command:', error);
+              await this.bot.sendMessage(chatId, '❌ An error occurred while processing your request.');
+            }
+            break;
+  
+          case "sell":
+            await this.bot.sendMessage(chatId, "Enter the token contract address you want to sell (Eg: 0x...dac):", 
+              { reply_markup: { force_reply: true } });
+            break;
+  
+          case "check_balance":
+            await this.handleBalanceCheck(query);
+            break;
+  
+          case "price":
+            await this.sendPriceMenu(chatId);
+            break;
+  
+          case "trending":
+            await this.sendPool(chatId);
+            break;
+  
+          case "help":
+            const helpMessage = `
+  🔄 *Wallet Commands*
+  /start - Create or view your wallet
+  
+  *Menu*
+  🛒 Buy - Buy any token on BNB Chain
+  🤑 Sell - Sell any token you bought
+  💰 Balance - Check current holdings of your wallet
+  📈 Price - Check the current price
+  📊 Trending - Find trending coins and pools on BNB Chain 
+  🤝 Help - A helpful guide on CoinMaster 
+  ⚙️ Settings - Check your wallet settings here
+            `;
+  
+            await this.bot.sendMessage(chatId, helpMessage, {
+              parse_mode: "Markdown",
+              disable_web_page_preview: true
+            });
+            break;
+  
+          case "settings":
+            await this.bot.sendMessage(chatId, "Test");
+            break;
+        }
+      }
+    } catch (error) {
+      console.error('Callback query error:', error);
+      await this.bot.sendMessage(chatId, "Error processing your request");
+    }
+  }
+  
   async sendTrending(chatId) {
     try {
       // Fetch trending data
@@ -799,7 +900,7 @@ ${analysis.analysis}
             const keyboard = {
               inline_keyboard: [
                 [
-                  { text: "🛒 Buy", callback_data: `trade_buy_${bscAddress}` },
+                  { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
                   {
                     text: "💰 Sell",
                     callback_data: `trade_sell_${bscAddress}`,
@@ -984,7 +1085,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
         { text: "🔍 BSCScan", url: bscscanUrl },
           ],
           [
-        { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
+        { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
         {
           text: "🔎 Analysis",
           callback_data: `analysis_${tokenAddress}`,
@@ -1862,78 +1963,78 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
     ); // Keep last 50 patterns
   }
 
-  async handleCallbackQuery(query) {
-    const chatId = query.message.chat.id;
+//   async handleCallbackQuery(query) {
+//     const chatId = query.message.chat.id;
 
-    if (query.data.startsWith("trade_")) {
-      await this.handleTradeCallbacks(query);
-      return;
-    }
+//     if (query.data.startsWith("trade_")) {
+//       await this.handleTradeCallbacks(query);
+//       return;
+//     }
 
-    if (query.data === "check_balance") {
-      await this.handleBalanceCheck(query);
-      return;
-    }
+//     if (query.data === "check_balance") {
+//       await this.handleBalanceCheck(query);
+//       return;
+//     }
 
-    if (query.data.startsWith("analysis_")) {
-      const [action, tokenAddress] = query.data.split("_");
-      const analysis = await this.analyzeTradingOpportunity(
-        tokenAddress,
-        chatId
-      );
+//     if (query.data.startsWith("analysis_")) {
+//       const [action, tokenAddress] = query.data.split("_");
+//       const analysis = await this.analyzeTradingOpportunity(
+//         tokenAddress,
+//         chatId
+//       );
 
-      const tradeMessage = `
-Trading Analysis for ${analysis.metrics.name}:
+//       const tradeMessage = `
+// Trading Analysis for ${analysis.metrics.name}:
 
-🔍 Technical Analysis:
-• RSI: ${
-  analysis.analysis.technicalSignals
-    ? analysis.analysis.technicalSignals.value
-    : "N/A"
-} (${
-  analysis.analysis.technicalSignals
-    ? analysis.analysis.technicalSignals.interpretation
-    : "N/A"
-})
-• Volatility: ${
-  analysis.analysis.volatility
-    ? analysis.analysis.volatility + "%"
-    : "N/A"
-}
-• Price Change: ${analysis.metrics.priceChange.h24}% (24h)
+// 🔍 Technical Analysis:
+// • RSI: ${
+//   analysis.analysis.technicalSignals
+//     ? analysis.analysis.technicalSignals.value
+//     : "N/A"
+// } (${
+//   analysis.analysis.technicalSignals
+//     ? analysis.analysis.technicalSignals.interpretation
+//     : "N/A"
+// })
+// • Volatility: ${
+//   analysis.analysis.volatility
+//     ? analysis.analysis.volatility + "%"
+//     : "N/A"
+// }
+// • Price Change: ${analysis.metrics.priceChange.h24}% (24h)
 
-📊 Market Metrics:
-• Volume: $${analysis.metrics.volume24h}
-• Liquidity: $${analysis.metrics.liquidityUSD}
-• Market Cap: $${analysis.metrics.marketCap}
-      `;
+// 📊 Market Metrics:
+// • Volume: $${analysis.metrics.volume24h}
+// • Liquidity: $${analysis.metrics.liquidityUSD}
+// • Market Cap: $${analysis.metrics.marketCap}
+//       `;
 
-      const analysisMessage = `
-🤖 AI Analysis:
-${analysis.analysis}
-            `;
-      const tradeKeyboard = {
-        inline_keyboard: [
-          [
-            { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
-            {
-              text: "💰 Analysis",
-              callback_data: `analysis_${tokenAddress}`,
-            },
-          ],
-          [{ text: "💰 Balance", callback_data: "check_balance" }],
-        ],
-      };
+//       const analysisMessage = `
+// 🤖 AI Analysis:
+// ${analysis.analysis}
+//             `;
+//       const tradeKeyboard = {
+//         inline_keyboard: [
+//           [
+//             { text: "🛒 Buy", callback_data: `trade_buy_${tokenAddress}` },
+//             {
+//               text: "💰 Analysis",
+//               callback_data: `analysis_${tokenAddress}`,
+//             },
+//           ],
+//           [{ text: "💰 Balance", callback_data: "check_balance" }],
+//         ],
+//       };
 
-      await this.bot.sendMessage(chatId, tradeMessage, {
-        parse_mode: "Markdown",
-      });
-      await this.bot.sendMessage(chatId, analysisMessage, {
-        parse_mode: "Markdown",
-        reply_markup: tradeKeyboard,
-      });
-    }
-  }
+//       await this.bot.sendMessage(chatId, tradeMessage, {
+//         parse_mode: "Markdown",
+//       });
+//       await this.bot.sendMessage(chatId, analysisMessage, {
+//         parse_mode: "Markdown",
+//         reply_markup: tradeKeyboard,
+//       });
+//     }
+//   }
 
   async handleBalanceCheck(query) {
     try {
