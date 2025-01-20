@@ -517,8 +517,8 @@ ${analysis.analysis}
 📱 Trading Info:
 • Spread: ${coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || 'N/A'}%
 • Trust Score: ${coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || 'N/A'}
-• Anomaly: ${coinData.tickers?.[0]?.is_anomaly == false ? "⚠️" : "✅" || 'N/A'}
-• Stale: ${coinData.tickers?.[0]?.is_stale == false ? "⚠️" : "✅" || 'N/A'}
+• Anomaly: ${coinData.tickers?.[0]?.is_anomaly ? "⚠️" : "❌" || 'N/A'}
+• Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "❌" || 'N/A'}
 
 Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
     `;
