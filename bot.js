@@ -493,11 +493,12 @@ ${analysis.analysis}
 • Pool: ${onchainData.pool.name}
 • Address: <code>${onchainData.pool.address}</code>
       `;
+
       const marketMessage = `
 💼 Market Data:
 • Market Cap Rank: #${coinData.market_cap_rank || 'N/A'}
 • Market Cap: $${(coinData.market_data?.market_cap?.usd || 0).toLocaleString()}
-• TVL: $${coinData.market_data?.total_value_locked || 0}
+• TVL: $${coinData.market_data?.total_value_locked?.usd || 0}
 • MCap/TVL: ${coinData.market_data?.mcap_to_tvl_ratio || 'N/A'}
 • FDV/TVL: ${coinData.market_data?.fdv_to_tvl_ratio || 'N/A'}
 • MCap/FDV: ${coinData.market_data?.market_cap_fdv_ratio || 'N/A'}
@@ -516,8 +517,8 @@ ${analysis.analysis}
 📱 Trading Info:
 • Spread: ${coinData.tickers?.[0]?.bid_ask_spread_percentage?.toFixed(4) || 'N/A'}%
 • Trust Score: ${coinData.tickers?.[0]?.trust_score == "green" ? "✅" : "❌" || 'N/A'}
-• Anomaly: ${coinData.tickers?.[0]?.is_anomaly ? "⚠️" : "✅" || 'N/A'}
-• Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "✅" || 'N/A'}
+• Anomaly: ${coinData.tickers?.[0]?.is_anomaly == false ? "⚠️" : "✅" || 'N/A'}
+• Stale: ${coinData.tickers?.[0]?.is_stale == false ? "⚠️" : "✅" || 'N/A'}
 
 Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
     `;
