@@ -378,7 +378,7 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
   }
 }
 
-class CryptoTradingBot {
+class TelegramBot {
   constructor(telegramBot) {
     this.bot = telegramBot;
     this.setupCore();
