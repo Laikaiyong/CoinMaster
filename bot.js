@@ -586,45 +586,35 @@ class CryptoTradingBot {
 
         // Get token transfers to find all tokens in wallet
         const apiKey = process.env.BSC_API_KEY;
-        const bscScanUrl = `https://api.bscscan.com/api?module=account&action=tokentx&address=${wallet.address}&startblock=0&endblock=999999999&sort=desc&apikey=${apiKey}`;
 
-        let processedTokens;
-        let tokenBalances;
+        let processedTokens = new Set();
+        let tokenBalances = '';
         try {
-          // Then scan for other tokens using BSCScan API
           const response = await fetch(bscScanUrl);
           const data = await response.json();
 
           if (data.status === "1" && data.result) {
+            processedTokens = new Set();
+            tokenBalances = '';
+            
             for (const tx of data.result) {
               const tokenAddress = tx.contractAddress.toLowerCase();
-
+              
               // Skip if already processed
               if (processedTokens.has(tokenAddress)) continue;
 
-              try {
-                const contract = new this.web3.eth.Contract(
-                  erc20ABI,
-                  tokenAddress
-                );
-                const [balance, decimals, symbol] = await Promise.all([
-                  contract.methods.balanceOf(wallet.address).call(),
-                  contract.methods.decimals().call(),
-                  contract.methods.symbol().call(),
-                ]);
+              // Get token balance
+              const balanceUrl = `https://api.bscscan.com/api?module=account&action=tokenbalance&contractaddress=${tokenAddress}&address=${wallet.address}&tag=latest&apikey=${apiKey}`;
+              const balanceResponse = await fetch(balanceUrl);
+              const balanceData = await balanceResponse.json();
 
-                const formattedBalance = balance / Math.pow(10, decimals);
-                if (formattedBalance > 0) {
-                  tokenBalances += `${symbol}: ${formattedBalance.toFixed(
-                    4
-                  )}\n`;
+              if (balanceData.status === "1") {
+                const balance = parseFloat(balanceData.result) / Math.pow(10, parseInt(tx.tokenDecimal));
+                
+                if (balance > 0) {
+                  tokenBalances += `${tx.tokenSymbol} | <code>${tokenAddress}</code> <a href="tg://copy/${tokenAddress}">📋</a> | ${balance.toFixed(4)}\n`;
                 }
                 processedTokens.add(tokenAddress);
-              } catch (error) {
-                console.error(
-                  `Error fetching token balance for ${tokenAddress}:`,
-                  error
-                );
               }
             }
           }
@@ -635,7 +625,7 @@ class CryptoTradingBot {
 
         const message =
           `💰 Wallet Balance \n` +
-          `BNB Balance: ${parseFloat(balanceInBNB).toFixed(4)} BNB\n` +
+          `BNB | <code>${"0xb8c77482e45f1f44de1745f52c74426c631bdd52"}</code> <a href="tg://copy/${"0xb8c77482e45f1f44de1745f52c74426c631bdd52"}">📋</a>| ${parseFloat(balanceInBNB).toFixed(4)}\n` +
           (tokenBalances ? `\n🪙 Token Balances:\n${tokenBalances}` : "");
 
         let welcomeMessage = `Welcome to CoinMaster! 🚀\n\n`;
@@ -2062,67 +2052,55 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
         return;
       }
 
-      // Get BNB balance
-      const balance = await this.web3.eth.getBalance(wallet.address);
-      const balanceInBNB = this.web3.utils.fromWei(balance, "ether");
-
       const bscScanUrl = `${this.scannerUrl}address/${wallet.address}`;
 
-      // Get token transfers to find all tokens in wallet
-      const apiKey = process.env.BSC_API_KEY;
-      const bscScanningUrl = `https://api.bscscan.com/api?module=account&action=tokentx&address=${wallet.address}&startblock=0&endblock=999999999&sort=desc&apikey=${apiKey}`;
+        // Get BNB balance
+        const balance = await this.web3.eth.getBalance(wallet.address);
+        const balanceInBNB = this.web3.utils.fromWei(balance, "ether");
 
-      let processedTokens;
-      let tokenBalances;
-      try {
-        // Then scan for other tokens using BSCScan API
-        const response = await fetch(bscScanningUrl);
-        const data = await response.json();
 
-        if (data.status === "1" && data.result) {
-          for (const tx of data.result) {
-            const tokenAddress = tx.contractAddress.toLowerCase();
+        // Get token transfers to find all tokens in wallet
+        const apiKey = process.env.BSC_API_KEY;
+        let processedTokens = new Set();
+        let tokenBalances = '';
+        try {
+          const response = await fetch(bscScanUrl);
+          const data = await response.json();
 
-            // Skip if already processed
-            if (processedTokens.has(tokenAddress)) continue;
+          if (data.status === "1" && data.result) {
+            processedTokens = new Set();
+            tokenBalances = '';
+            
+            for (const tx of data.result) {
+              const tokenAddress = tx.contractAddress.toLowerCase();
+              
+              // Skip if already processed
+              if (processedTokens.has(tokenAddress)) continue;
 
-            try {
-              const contract = new this.web3.eth.Contract(
-                erc20ABI,
-                tokenAddress
-              );
-              const [balance, decimals, symbol] = await Promise.all([
-                contract.methods.balanceOf(wallet.address).call(),
-                contract.methods.decimals().call(),
-                contract.methods.symbol().call(),
-              ]);
+              // Get token balance
+              const balanceUrl = `https://api.bscscan.com/api?module=account&action=tokenbalance&contractaddress=${tokenAddress}&address=${wallet.address}&tag=latest&apikey=${apiKey}`;
+              const balanceResponse = await fetch(balanceUrl);
+              const balanceData = await balanceResponse.json();
 
-              const formattedBalance = balance / Math.pow(10, decimals);
-              if (formattedBalance > 0) {
-                tokenBalances += `${symbol}: ${formattedBalance.toFixed(
-                  4
-                )}\n`;
+              if (balanceData.status === "1") {
+                const balance = parseFloat(balanceData.result) / Math.pow(10, parseInt(tx.tokenDecimal));
+                
+                if (balance > 0) {
+                  tokenBalances += `${tx.tokenSymbol} | <code>${tokenAddress}</code> <a href="tg://copy/${tokenAddress}">📋</a> | ${balance.toFixed(4)}\n`;
+                }
+                processedTokens.add(tokenAddress);
               }
-              processedTokens.add(tokenAddress);
-            } catch (error) {
-              console.error(
-                `Error fetching token balance for ${tokenAddress}:`,
-                error
-              );
             }
           }
+        } catch (error) {
+          console.error("Error scanning wallet:", error);
+          tokenBalances = "Error fetching token balances";
         }
-      } catch (error) {
-        console.error("Error scanning wallet:", error);
-        tokenBalances = "Error fetching token balances";
-      }
 
-
-      const message =
-        `💰 *Wallet Balance*\n\n` +
-        `Address: \`${wallet.address}\`\n` +
-        `BNB Balance: ${parseFloat(balanceInBNB).toFixed(4)} BNB` +
-        (tokenBalances ? `\n🪙 Token Balances:\n${tokenBalances}` : "");
+        const message =
+          `💰 Wallet Balance \n` +
+          `BNB | <code>${"0xb8c77482e45f1f44de1745f52c74426c631bdd52"}</code> <a href="tg://copy/${"0xb8c77482e45f1f44de1745f52c74426c631bdd52"}">📋</a>| ${parseFloat(balanceInBNB).toFixed(4)}\n` +
+          (tokenBalances ? `\n🪙 Token Balances:\n${tokenBalances}` : "");
 
       const keyboard = {
         inline_keyboard: [[{ text: "🔍 View on BSCScan", url: bscScanUrl }]],
