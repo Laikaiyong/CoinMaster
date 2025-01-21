@@ -817,7 +817,7 @@ class CryptoTradingBot {
             [
               { text: "🛒 Buy", callback_data: "buy" },
               { text: "🤑 Sell", callback_data: "sell" },
-              { text: "💰 Check Balance", callback_data: "check_balance" },
+              { text: "💰 Balance", callback_data: "check_balance" },
             ],
             [
               { text: "📈 Price", callback_data: "price" },
@@ -901,7 +901,7 @@ class CryptoTradingBot {
           { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
           { text: "🔎 Analysis", callback_data: `analysis_${tokenAddress}` },
         ],
-        [{ text: "💰 Check Balance", callback_data: "check_balance" }],
+        [{ text: "💰 Balance", callback_data: "check_balance" }],
       ],
     };
 
