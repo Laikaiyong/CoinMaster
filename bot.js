@@ -149,135 +149,356 @@ class TelegramDodoBot {
     }
   }
 
-  async executeDodoSwap(chatId, toTokenAddress, bnbAmount, wallet) {
-    try {
-      await this.bot.sendMessage(chatId, "🔄 Processing your swap request...");
+  async validateSwapAmount(amount) {
+    // parseUnits is now directly from ethers in v6
+    const MIN_BNB_AMOUNT = ethers.parseUnits("0.005", "ether");
+    const MAX_BNB_AMOUNT = ethers.parseUnits("10", "ether");
+    
+    if (amount < MIN_BNB_AMOUNT) {
+      throw new Error('Amount too small. Minimum swap amount is 0.005 BNB');
+    }
+  
+    if (amount > MAX_BNB_AMOUNT) {
+        throw new Error('Amount too large. Maximum swap amount is 10 BNB');
+    }
+}
 
-      const fromTokenAddress = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"; // BNB
-      const fromAmount = ethers.parseUnits(bnbAmount.toString(), 18);
-
-      // Get swap route from DODO API
-      const response = await axios.get(this.dodoAPI, {
-        params: {
-          fromTokenAddress,
-          toTokenAddress,
-          fromAmount: fromAmount.toString(),
-          slippage: 1.5,
-          userAddr: wallet.address,
-          chainId: 56,
-          rpc: this.rpcUrl,
-          apikey: this.apiKey,
-        },
-      });
-
-      if (response.data.status === 200) {
-        const routeObj = response.data.data;
-        await this.bot.sendMessage(
-          chatId,
-          "📊 Got the best swap route. Preparing transaction..."
+async validateBalanceForSwap(wallet, amount, estimatedGas) {
+    const balance = await wallet.provider.getBalance(wallet.address);
+    const totalRequired = amount + estimatedGas; // v6 uses native BigInt operations
+    
+    if (balance < totalRequired) { // v6 uses native BigInt comparisons
+        throw new Error(
+            `Insufficient balance. Required: ${ethers.formatEther(totalRequired)} BNB, ` +
+            `Available: ${ethers.formatEther(balance)} BNB`
         );
+    }
+}
 
-        // Check and handle allowance if needed
-        if (fromTokenAddress !== "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
-          const hasApproved = await this.checkAllowance(
-            fromTokenAddress,
-            routeObj.to,
-            wallet.address,
-            fromAmount,
-            wallet
-          );
+async estimateGasWithBuffer(wallet, tx) {
+    const estimated = await wallet.estimateGas(tx);
+    // v6 uses native BigInt operations
+    return estimated * 150n / 100n; // 50% buffer
+}
 
-          if (!hasApproved) {
-            await this.bot.sendMessage(chatId, "🔓 Approving tokens...");
-            await this.doApprove(
-              fromTokenAddress,
-              routeObj.to,
-              fromAmount,
-              wallet
-            );
-            await this.bot.sendMessage(
-              chatId,
-              "✅ Tokens approved successfully"
-            );
+async getAdjustedGasPrice(provider) {
+    const feeData = await provider.getFeeData();
+    const minGasPrice = ethers.parseUnits("3", "gwei");
+    
+    // Use native BigInt comparison in v6
+    return feeData.gasPrice < minGasPrice ? minGasPrice : feeData.gasPrice;
+}
+
+async simulateTransaction(wallet, tx) {
+    try {
+        // v6 provider.call syntax remains similar
+        await wallet.provider.call({
+            to: tx.to,
+            data: tx.data,
+            value: tx.value,
+            from: tx.from
+        });
+        return true;
+    } catch (error) {
+        console.error('Transaction simulation failed:', error);
+        return false;
+    }
+}
+
+async checkAllowance(tokenAddress, targetAddress, userAddress, fromAmount, wallet) {
+  try {
+      const tokenContract = new ethers.Contract(
+          tokenAddress,
+          erc20ABI,
+          wallet  // v6 uses wallet directly
+      );
+      
+      const allowance = await tokenContract.allowance(userAddress, targetAddress);
+      // v6 uses native BigInt comparisons
+      return allowance >= fromAmount;
+  } catch (error) {
+      console.error('Check allowance error:', error);
+      throw error;
+  }
+}
+
+async doApprove(tokenAddress, targetAddress, fromAmount, wallet, chatId) {
+  try {
+      const tokenContract = new ethers.Contract(
+          tokenAddress,
+          erc20ABI,
+          wallet  // v6 uses wallet directly
+      );
+      
+      await this.bot.sendMessage(chatId, '📝 Preparing approval transaction...');
+      
+      // v6 style transaction
+      const tx = await tokenContract.approve(
+          targetAddress,
+          // v6 uses MaxUint256 directly from ethers
+          ethers.MaxUint256,
+          {
+              gasLimit: await tokenContract.approve.estimateGas(targetAddress, ethers.MaxUint256)
           }
-        }
+      );
+      
+      await this.bot.sendMessage(chatId, '⏳ Waiting for approval confirmation...');
+      
+      // v6 style wait
+      const receipt = await tx.wait();
+      
+      // v6 uses boolean for status
+      if (!receipt.status) {
+          throw new Error('Approval transaction failed');
+      }
+  } catch (error) {
+      console.error('Approval error:', error);
+      await this.bot.sendMessage(chatId, '❌ Token approval failed. Please try again.');
+      throw error;
+  }
+}
 
-        // Estimate gas and prepare transaction
-        const gasLimit = await wallet.estimateGas({
-          to: routeObj.to,
-          data: routeObj.data,
-          value: fromAmount,
+async handleSellCommand(chatId, userId, tokenAddress, amount) {
+  try {
+      // Get user's private key from Supabase
+      const privateKey = await this.getUserPrivateKey(userId);
+      const wallet = new ethers.Wallet(privateKey, this.rpcProvider);
+
+      await this.executeDodoSell(chatId, tokenAddress, amount, wallet);
+
+  } catch (error) {
+      if (error.message === 'No private key found for user') {
+          await this.bot.sendMessage(chatId, '❌ Please set up your private key first using the /setup command.');
+      } else {
+          console.error('Error in sell command:', error);
+          await this.bot.sendMessage(chatId, '❌ An error occurred while processing your request.');
+      }
+  }
+}
+
+async validateTokenBalance(tokenAddress, wallet, amount) {
+  const tokenContract = new ethers.Contract(tokenAddress, erc20ABI, wallet);
+  const balance = await tokenContract.balanceOf(wallet.address);
+  
+  if (balance < amount) {
+      throw new Error(
+          `Insufficient token balance. Required: ${ethers.formatUnits(amount, await tokenContract.decimals())}, ` +
+          `Available: ${ethers.formatUnits(balance, await tokenContract.decimals())}`
+      );
+  }
+}
+
+
+//pancake test
+async executeDodoSell(chatId, fromTokenAddress, tokenAmount, wallet) {
+  try {
+      await this.bot.sendMessage(chatId, '🔄 Processing your sell request...');
+
+      const WBNB = "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c";
+      const PANCAKE_ROUTER = "0x10ED43C718714eb63d5aA57B78B54704E256024E";
+      
+      const tokenContract = new ethers.Contract(fromTokenAddress, erc20ABI, wallet);
+      const decimals = await tokenContract.decimals();
+      const totalAmount = ethers.parseUnits(tokenAmount.toString(), decimals);
+      // Reduce amount by 2%
+      const sellAmount = totalAmount * 98n / 100n;
+
+      const routerABI = [
+          "function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) external",
+          "function getAmountsOut(uint256 amountIn, address[] path) public view returns (uint256[] memory amounts)"
+      ];
+      
+      const router = new ethers.Contract(PANCAKE_ROUTER, routerABI, wallet);
+      const path = [fromTokenAddress, WBNB];
+
+      // Get quote first
+      const amounts = await router.getAmountsOut(sellAmount, path);
+    
+      // Always approve max
+      const currentAllowance = await tokenContract.allowance(wallet.address, PANCAKE_ROUTER);
+      if (currentAllowance < totalAmount) {
+          console.log('Approving router...');
+          await this.bot.sendMessage(chatId, '🔓 Approving tokens...');
+          const approveTx = await tokenContract.approve(PANCAKE_ROUTER, ethers.MaxUint256);
+          await approveTx.wait(1);
+      }
+
+      const deadline = Math.floor(Date.now() / 1000) + 60 * 20;
+      const feeData = await wallet.provider.getFeeData();
+
+      await this.bot.sendMessage(chatId, '🚀 Executing sell...');
+
+      const tx = await router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+          sellAmount,
+          0n, // No min output for testing
+          path,
+          wallet.address,
+          deadline,
+          {
+              gasLimit: 500000n,
+              gasPrice: feeData.gasPrice
+          }
+      );
+      
+      await this.bot.sendMessage(chatId, '⏳ Waiting for transaction confirmation...');
+      const receipt = await tx.wait(1);
+
+      if (receipt.status === 1) {
+          await this.bot.sendMessage(
+              chatId,
+              `✅ Sell successful!\nTransaction Hash: ${tx.hash}\nView on BSCScan: https://bscscan.com/tx/${tx.hash}`
+          );
+      } else {
+          throw new Error('Transaction failed');
+      }
+
+  } catch (error) {
+      console.error('Detailed error:', {
+          message: error.message,
+          reason: error.reason,
+          code: error.code,
+          data: error.data,
+          transaction: error.transaction
+      });
+      
+      let errorMessage = '❌ Error executing sell. Please try again later.';
+      
+      if (error.code === 'INSUFFICIENT_FUNDS') {
+          errorMessage = '❌ Insufficient BNB for gas fees.';
+      } else if (error.message?.includes('insufficient')) {
+          errorMessage = '❌ Insufficient token balance or BNB for gas.';
+      } else if (error.reason?.includes('INSUFFICIENT_OUTPUT_AMOUNT')) {
+          errorMessage = '❌ Price impact too high. Try selling a smaller amount.';
+      } else if (error.message?.includes('TRANSFER_FROM_FAILED')) {
+          errorMessage = '❌ Transfer failed. Try again or reduce amount.';
+      }
+      
+      await this.bot.sendMessage(chatId, errorMessage);
+  }
+}
+
+
+
+// Modified executeDodoSwap function with v6 compatibility
+async executeDodoSwap(chatId, toTokenAddress, bnbAmount, wallet) {
+    try {
+        await this.bot.sendMessage(chatId, '🔄 Processing your swap request...');
+
+        const fromTokenAddress = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+        const fromAmount = ethers.parseUnits(bnbAmount.toString(), 18);
+
+        await this.validateSwapAmount(fromAmount);
+
+        const response = await axios.get(this.dodoAPI, {
+            params: {
+                fromTokenAddress,
+                toTokenAddress,
+                fromAmount: fromAmount.toString(),
+                slippage: 10,
+                userAddr: wallet.address,
+                chainId: 56,
+                rpc: this.rpcUrl,
+                apikey: this.apiKey,
+            },
         });
 
-        const gasPrice = await wallet.getGasPrice();
-        const nonce = await wallet.getTransactionCount();
+        if (response.data.status === 200) {
+            const routeObj = response.data.data;
+            
+            if (!routeObj || !routeObj.to || !routeObj.data) {
+                throw new Error('Invalid route data received from API');
+            }
 
-        const tx = {
-          from: wallet.address,
-          to: routeObj.to,
-          value: fromAmount,
-          nonce,
-          gasLimit: ethers.utils.hexlify(gasLimit),
-          gasPrice: ethers.utils.hexlify(gasPrice),
-          data: routeObj.data,
-        };
+            await this.bot.sendMessage(chatId, '📊 Got the best swap route. Preparing transaction...');
 
-        // Execute the swap
-        await this.bot.sendMessage(chatId, "🚀 Executing swap...");
-        const result = await wallet.sendTransaction(tx);
+            // Handle allowance (ERC20 token swaps)
+            if (fromTokenAddress !== "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
+                const hasApproved = await this.checkAllowance(
+                    fromTokenAddress,
+                    routeObj.to,
+                    wallet.address,
+                    fromAmount,
+                    wallet
+                );
 
-        await this.bot.sendMessage(
-          chatId,
-          `✅ Swap successful!\nTransaction Hash: ${result.hash}\nView on BSCScan: https://bscscan.com/tx/${result.hash}`
-        );
-      }
+                if (!hasApproved) {
+                    await this.bot.sendMessage(chatId, '🔓 Approving tokens...');
+                    await this.doApprove(fromTokenAddress, routeObj.to, fromAmount, wallet);
+                    await this.bot.sendMessage(chatId, '✅ Tokens approved successfully');
+                }
+            }
+
+            const gasPrice = await this.getAdjustedGasPrice(wallet.provider);
+            const nonce = await wallet.provider.getTransactionCount(wallet.address);
+
+            const tx = {
+                from: wallet.address,
+                to: routeObj.to,
+                value: fromAmount,
+                nonce: nonce,
+                gasPrice: gasPrice, // v6 simplified gas pricing
+                data: routeObj.data,
+            };
+
+            tx.gasLimit = await this.estimateGasWithBuffer(wallet, tx);
+
+            await this.validateBalanceForSwap(wallet, fromAmount, tx.gasLimit * tx.gasPrice);
+
+            if (!await this.simulateTransaction(wallet, tx)) {
+                throw new Error('Transaction simulation failed. Aborting to prevent loss of funds.');
+            }
+
+            await this.bot.sendMessage(chatId, '🚀 Executing swap...');
+            const result = await wallet.sendTransaction(tx);
+            
+            await this.bot.sendMessage(chatId, '⏳ Waiting for transaction confirmation...');
+            const receipt = await result.wait(1);
+
+            if (!receipt.status) { // v6 uses regular boolean
+                throw new Error('Transaction failed during execution');
+            }
+
+            await this.bot.sendMessage(
+                chatId,
+                `✅ Swap successful!\nTransaction Hash: ${result.hash}\nView on BSCScan: https://bscscan.com/tx/${result.hash}`
+            );
+        }
     } catch (error) {
-      console.error("Swap error:", error);
-
-      let errorMessage = "❌ Error executing swap. Please try again later.";
-
-      if (error.code === "INSUFFICIENT_FUNDS") {
-        errorMessage = "❌ Insufficient funds to complete the transaction.";
-      } else if (error.message?.includes("user rejected")) {
-        errorMessage = "❌ Transaction was rejected.";
-      } else if (error.message?.includes("gas required exceeds allowance")) {
-        errorMessage =
-          "❌ Gas required exceeds balance. Please reduce the amount.";
-      }
-
-      await this.bot.sendMessage(chatId, errorMessage);
+        console.error('Swap error:', error);
+        
+        let errorMessage = '❌ Error executing swap. Please try again later.';
+        
+        if (error.code === 'INSUFFICIENT_FUNDS') {
+            errorMessage = '❌ Insufficient funds to complete the transaction.';
+        } else if (error.message?.includes('user rejected')) {
+            errorMessage = '❌ Transaction was rejected.';
+        } else if (error.message?.includes('gas required exceeds allowance')) {
+            errorMessage = '❌ Gas required exceeds balance. Please reduce the amount.';
+        } else if (error.reason?.includes('Return amount is not enough')) {
+            errorMessage = '❌ Swap failed: Price impact too high or insufficient liquidity. Try reducing amount.';
+        } else if (error.message?.includes('Amount too')) {
+            errorMessage = `❌ ${error.message}`;
+        }
+        
+        await this.bot.sendMessage(chatId, errorMessage);
     }
-  }
+}
 
-  async checkAllowance(
-    tokenAddress,
-    targetAddress,
-    userAddress,
-    fromAmount,
-    wallet
-  ) {
-    const erc20Contract = new ethers.Contract(tokenAddress, erc20ABI, wallet);
-    const allowance = await erc20Contract.allowance(userAddress, targetAddress);
-    return allowance.gt(fromAmount);
-  }
 
-  async doApprove(tokenAddress, targetAddress, fromAmount, wallet) {
-    const erc20Contract = new ethers.Contract(tokenAddress, erc20ABI, wallet);
-    const approveTx = await erc20Contract.approve(targetAddress, fromAmount);
-    await approveTx.wait();
-  }
 
-  async handlePrice(chatId, tokenAddress) {
-    try {
-      // Fetch token info from GeckoTerminal
-      const onchainData = await this.getOnchainMetrics(tokenAddress);
-      const coinData = await this.indicators.getCoinSentiment(tokenAddress);
 
-      // Get price chart image from GeckoTerminal
-      const chartUrl = `${`https://www.geckoterminal.com/bsc/tokens/${tokenAddress}`}`;
 
-      // Get BSCScan preview
-      const bscscanUrl = `https://bscscan.com/token/${tokenAddress}`;
+async handlePrice(chatId, tokenAddress) {
+  try {
+    // Fetch token info from GeckoTerminal
+    const onchainData = await this.getOnchainMetrics(tokenAddress);
+    const coinData = await this.indicators.getCoinSentiment(tokenAddress);
+
+    // Get price chart image from GeckoTerminal
+    const chartUrl = `${`https://www.geckoterminal.com/bsc/tokens/${tokenAddress}`}`;
+
+    // Get BSCScan preview
+    const bscscanUrl = `https://bscscan.com/token/${tokenAddress}`;
 
       const message = `
 🪙 <b>${onchainData.name} (${onchainData.symbol})</b>
@@ -296,17 +517,17 @@ class TelegramDodoBot {
 
 🔄 24h Transactions: 
 • Buys: ${onchainData.transactions.h24.buys} (${
-        onchainData.transactions.h24.buyers
-      } buyers)
+      onchainData.transactions.h24.buyers
+    } buyers)
 • Sells: ${onchainData.transactions.h24.sells} (${
-        onchainData.transactions.h24.sellers
-      } sellers)
+      onchainData.transactions.h24.sellers
+    } sellers)
 
 🏊‍♂️ Top Liquidity Pool:
 • Pool: ${onchainData.pool.name}
 • Address: <code>${onchainData.pool.address}</code>
-      `;
-      const marketMessage = `
+    `;
+    const marketMessage = `
 💼 Market Data:
 • Market Cap Rank: #${coinData.market_cap_rank || "N/A"}
 • Market Cap: $${(coinData.market_data?.market_cap?.usd || 0).toLocaleString()}
@@ -341,23 +562,23 @@ class TelegramDodoBot {
 • Stale: ${coinData.tickers?.[0]?.is_stale ? "⚠️" : "❌" || "N/A"}
 
 Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
-    `;
+  `;
 
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: "📈 Price Chart", url: chartUrl },
-            { text: "🔍 BSCScan", url: bscscanUrl },
-          ],
-          [
-            { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
-            {
-              text: "💰 Analysis",
-              callback_data: `analysis_${tokenAddress}`,
-            },
-          ],
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: "📈 Price Chart", url: chartUrl },
+          { text: "🔍 BSCScan", url: bscscanUrl },
         ],
-      };
+        [
+          { text: "🛒 Buy", callback_data: `swap_execute_${tokenAddress}` },
+          {
+            text: "💰 Analysis",
+            callback_data: `analysis_${tokenAddress}`,
+          },
+        ],
+      ],
+    };
 
       // Send message with chart image
       await this.bot.sendPhoto(chatId, onchainData.image_url);
@@ -374,43 +595,43 @@ Last Updated: ${new Date(coinData.market_data?.last_updated).toLocaleString()}
     }
   }
 
-  async getOnchainMetrics(tokenAddress) {
-    try {
-      const response = await axios.get(
-        `https://api.geckoterminal.com/api/v2/networks/bsc/tokens/${tokenAddress}?include=top_pools`
-      );
+async getOnchainMetrics(tokenAddress) {
+  try {
+    const response = await axios.get(
+      `https://api.geckoterminal.com/api/v2/networks/bsc/tokens/${tokenAddress}?include=top_pools`
+    );
 
-      const { data, included } = response.data;
-      const topPool = included[0];
+    const { data, included } = response.data;
+    const topPool = included[0];
 
-      return {
-        image_url: data.attributes.image_url ?? "",
-        name: data.attributes.name,
-        symbol: data.attributes.symbol,
-        price: data.attributes.price_usd,
-        volume24h: data.attributes.volume_usd.h24,
-        liquidity: data.attributes.liquidity_usd,
-        priceChange: topPool.attributes.price_change_percentage,
-        transactions: topPool.attributes.transactions,
-        pool: {
-          address: topPool.attributes.address,
-          name: topPool.attributes.name,
-        },
-      };
-    } catch (error) {
-      console.error("Error fetching onchain metrics:", error);
-      return {
-        name: "",
-        symbol: "",
-        price: 0,
-        volume24h: 0,
-        liquidity: 0,
-        holders: 0,
-        priceChange: 0,
-        transactions: 0,
-      };
-    }
+    return {
+      image_url: data.attributes.image_url ?? "",
+      name: data.attributes.name,
+      symbol: data.attributes.symbol,
+      price: data.attributes.price_usd,
+      volume24h: data.attributes.volume_usd.h24,
+      liquidity: data.attributes.liquidity_usd,
+      priceChange: topPool.attributes.price_change_percentage,
+      transactions: topPool.attributes.transactions,
+      pool: {
+        address: topPool.attributes.address,
+        name: topPool.attributes.name,
+      },
+    };
+  } catch (error) {
+    console.error("Error fetching onchain metrics:", error);
+    return {
+      name: "",
+      symbol: "",
+      price: 0,
+      volume24h: 0,
+      liquidity: 0,
+      holders: 0,
+      priceChange: 0,
+      transactions: 0,
+    };
   }
+}
 }
 
 class CryptoTradingBot {
@@ -806,11 +1027,58 @@ class CryptoTradingBot {
             break;
 
           case "sell":
-            await this.bot.sendMessage(
-              chatId,
-              "Enter the token contract address you want to sell (Eg: 0x...dac):",
-              { reply_markup: { force_reply: true } }
-            );
+            try {
+                const sentMessage = await this.bot.sendMessage(
+                    chatId,
+                    "Enter the token contract address you want to sell (Eg: 0x...dac):", 
+                    { reply_markup: { force_reply: true } }
+                );
+
+                const sellAddressHandler = async (addressReply) => {
+                    try {
+                        this.bot.removeReplyListener(sellAddressHandler);
+
+                        if (!addressReply.text) {
+                            await this.bot.sendMessage(addressReply.chat.id, '❌ Invalid input. Please provide a valid contract address.');
+                            return;
+                        }
+
+                        const tokenAddress = addressReply.text;
+
+                        if (!ethers.isAddress(tokenAddress)) {
+                            await this.bot.sendMessage(addressReply.chat.id, '❌ Invalid token address format. Please provide a valid address.');
+                            return;
+                        }
+
+                        // Show percentage buttons after valid address
+                        await this.bot.sendMessage(
+                            addressReply.chat.id,
+                            `Choose amount to sell:`,
+                            {
+                                reply_markup: {
+                                    inline_keyboard: [
+                                        [
+                                            { text: '25%', callback_data: `sell_${tokenAddress}_0.25` },
+                                            { text: '50%', callback_data: `sell_${tokenAddress}_0.5` },
+                                            { text: '75%', callback_data: `sell_${tokenAddress}_0.75` },
+                                            { text: '100%', callback_data: `sell_${tokenAddress}_1.0` }
+                                        ]
+                                    ]
+                                }
+                            }
+                        );
+
+                    } catch (error) {
+                        console.error('Error in sell address handler:', error);
+                        await this.bot.sendMessage(addressReply.chat.id, '❌ An error occurred while processing your request.');
+                    }
+                };
+
+                this.bot.onReplyToMessage(sentMessage.chat.id, sentMessage.message_id, sellAddressHandler);
+            } catch (error) {
+                console.error('Error in sell command:', error);
+                await this.bot.sendMessage(chatId, '❌ An error occurred while processing your request.');
+            }
             break;
 
           case "check_balance":
