@@ -966,7 +966,43 @@ class CryptoTradingBot {
             "❌ An error occurred while processing your request."
           );
         }
-      } else if (query.data.startsWith("analysis_")) {
+      }  else if (query.data.startsWith('sell_')) {
+        
+        const [_, tokenAddress, percentage] = query.data.split('_');
+
+        try {
+          const userId = query.from.id;
+          const privateKey = await dodoBot.getUserPrivateKey(userId);
+          const wallet = new ethers.Wallet(privateKey, dodoBot.rpcProvider);
+          const tokenContract = new ethers.Contract(tokenAddress, erc20ABI, wallet);
+          
+          // Get balance and decimals
+          const balance = await tokenContract.balanceOf(wallet.address);
+          const decimals = await tokenContract.decimals();
+          
+          const formattedBalance = ethers.formatUnits(balance, decimals);
+    
+          // Calculate amount using string operations
+          const calculatedAmount = parseFloat(formattedBalance) * parseFloat(percentage);
+          const amount = calculatedAmount.toString();
+      
+          // Show the amount being sold
+          await this.bot.sendMessage(
+              query.message.chat.id,
+              `Preparing to sell ${(Number(percentage) * 100)}% of your tokens (${amount} tokens)...`
+          );
+      
+          await dodoBot.handleSellCommand(query.message.chat.id, query.from.id, tokenAddress, amount);
+      } catch (error) {
+        console.error("Error in sell calculation:", error);
+        await this.bot.sendMessage(
+            query.message.chat.id, 
+            `❌ Error processing sell request: ${error.message}`
+        );
+      }
+    }
+      
+      else if (query.data.startsWith("analysis_")) {
         const tokenAddress = query.data.replace("analysis_", "");
         await this.sendAnalysis(chatId, tokenAddress, query.from.id);
       } else {
@@ -1099,7 +1135,7 @@ class CryptoTradingBot {
   /start - Create or view your wallet
   
   *Menu*
-  🛒 Buy - Buy any token on BNB Chain
+  🛒 [Buy]() - Buy any token on BNB Chain
   🤑 Sell - Sell any token you bought
   💰 Balance - Check current holdings of your wallet
   📈 Price - Check the current price
